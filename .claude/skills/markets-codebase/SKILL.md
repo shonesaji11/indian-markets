@@ -1,0 +1,54 @@
+---
+name: markets-codebase
+description: Map of this repo (Indian markets dashboard; FastAPI + DuckDB backend in backend/src/markets, React + Vite frontend in frontend/src). Use BEFORE planning or making any code change, adding a feature, fixing a bug or answering "where is X / how does Y work" in this project, so you can jump to the exact file and symbol instead of reading whole files. Covers layers, data flow, where each concern lives, and recipes for adding indicators, scans, endpoints, tables, pages and components.
+---
+
+# Markets codebase map
+
+Use this to pick the files to open, then open only those (and only the relevant line ranges, found via Grep). The code is the source of truth: if something here disagrees with the code, trust the code and **fix this map in the same change**.
+
+## Layers (backend `backend/src/markets/`)
+
+```
+providers/ (Angel One, Fake) ─┐                     ┌─ api/routers/* (FastAPI, /api prefix)
+sources/ (NSE index CSVs) ────┼─> pipelines/* ──────┼─ cli.py (`markets ...` commands)
+engine/ (indicators, scans) ──┘   (services)        └─ scripts/*.ps1 (nightly task)
+storage/duckdb/ (repositories, SQL migrations) <──── all services read/write through repos
+core/ (models + Protocol ports) ── shared by everything; bootstrap.py wires the Container
+```
+
+- Layers depend on `core/ports.py` Protocols, not concrete classes. `bootstrap.build_container()` builds everything once; routers get it via `api/deps.get_container`.
+- Candle frames everywhere: DatetimeIndex `ts` (**naive IST**) + float `open, high, low, close, volume` (`core/models.CANDLE_COLUMNS`).
+- Intervals: `core/models.Interval` (`1m 3m 5m 10m 15m 30m 1h 1d`), mirrored in `frontend/src/api/types.ts` `INTERVALS`.
+- Config: `config.Settings`, env vars `MARKETS_*` or `backend/.env` (`provider` = `angelone` | `fake`, `angel_*` credentials, `db_path`, `cors_origins`).
+- Versioned, immutable computations: indicators (`@indicator(name, version=...)`), scans (`@scan(name, version, ...)`), SQL (`v_daily_stats_v1`, `daily_signals_v1`). Changing logic = bump the version / add `_v2`, never edit v1 in place (the calc repo raises `CodeChangedError` on a changed code hash).
+
+## Frontend (`frontend/src/`)
+
+Pages (`pages/`, routes in `App.tsx`): `/` Overview, `/chart` Chart, `/stats` Stats, `/data` Data. Data access only through `api/queries.ts` (TanStack Query hooks) over `api/client.ts` (`/api`, proxied to :8000 by Vite). Types in `api/types.ts` mirror `api/schemas.py`. Page filters/sort/selections live in the URL via `hooks/useUrlState` (so Back, reload and links restore the view); never plain `useState` for them. Generic UI in `components/ui` (import from `components/ui/index.ts`), chart in `components/charts`, feature pieces in `features/<area>/`, formatting in `lib/format.ts` / `lib/time.ts`.
+
+## Where to add things
+
+| Task | Do this |
+|---|---|
+| New indicator | Function in `engine/indicators/{trend,momentum,volatility}.py` with `@indicator(...)` (a new module must also be imported in `engine/indicators/__init__.py`); registered via `engine/registry.default_registry`. Instantly available to `/api/calcs/*`, CLI `compute` and the chart's IndicatorPicker. Overlay vs separate pane: `features/indicators/toChartSeries.isOverlay`. |
+| New field for custom scans | Add a `ScanField` to `engine/screener.FIELDS` (must be a `daily_signals_v1` column); it appears in the Scans page pickers automatically. New indicators are scannable with no extra work. |
+| New built-in overview scan | `@scan(...)` function in `engine/scans.py` taking the snapshot DataFrame; it shows up in the overview's `scans`. New snapshot columns come from `daily_signals_v1` (SQL) via `DuckMarketRepository.snapshot`. |
+| New data source / broker | Implement `MarketDataProvider` (or `ConstituentSource`) from `core/ports.py`; register in `providers/build_provider`. Angel One API details: `angelone-smartapi` skill. |
+| New table / view / SQL macro | New numbered file in `storage/duckdb/migrations/` (applied by `migrator.migrate`), plus methods on a repo in `storage/duckdb/repositories.py` (add to the Protocol in `core/ports.py` if services use it). |
+| New business workflow | Service class in `pipelines/`, add it to `Container` + `build_container` in `bootstrap.py`, expose via a router and/or `cli.py`. |
+| New endpoint | Router in `api/routers/` (reuse an existing one by area), Pydantic models in `api/schemas.py`, include in `api/app.py` if new. Then TS type in `api/types.ts` + hook in `api/queries.ts` (add a key to `keys`). |
+| New watchlist / universe | `universes.WATCHLISTS` (`WatchlistSpec` with NSE `index` slug or explicit `EXCHANGE:SYMBOL` members). |
+| New page | `pages/XPage.tsx` + route in `App.tsx` + entry in the `NAV` array, both in `App.tsx`. Compose from `components/ui` and `features/*`. |
+| New UI widget | Generic → `components/ui/` and export from `index.ts`; feature-specific → `features/<area>/`. Check the existing list in references/frontend.md first. |
+
+## References
+
+| File | Contents |
+|---|---|
+| `references/backend.md` | Every backend module: classes, public methods, routes, DB tables, CLI commands, tests |
+| `references/frontend.md` | Every frontend file: exported components/hooks/types and what they're for |
+
+## Keeping this map current
+
+When a change adds, removes, renames or moves a module, public class/function, route, table, page or shared component, update the matching line here or in the reference file as part of the same change. Keep entries to one line.

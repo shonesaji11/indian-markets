@@ -1,0 +1,205 @@
+// React Query hooks: the only place components learn about endpoints.
+import {
+  keepPreviousData,
+  queryOptions,
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
+import { http } from './client';
+import type {
+  CalcDefinition,
+  CalcSeries,
+  CandleSeries,
+  CoverageRow,
+  IndicatorInfo,
+  IngestRun,
+  Instrument,
+  Interval,
+  MarketOverview,
+  ParamValue,
+  SavedScan,
+  ScanDefinition,
+  ScanField,
+  ScanRequest,
+  ScanRunResult,
+  SectorBreadth,
+  Watchlist,
+} from './types';
+
+export const keys = {
+  instruments: (q: string, exchange?: string) => ['instruments', q, exchange] as const,
+  candles: (id: number, interval: Interval, start?: string) => ['candles', id, interval, start] as const,
+  indicators: ['indicators'] as const,
+  calcDefinitions: ['calc-definitions'] as const,
+  calc: (id: number, interval: Interval, name: string, params: Record<string, ParamValue>) =>
+    ['calc', id, interval, name, params] as const,
+  coverage: ['coverage'] as const,
+  ingestRuns: ['ingest-runs'] as const,
+  scanFields: ['scan-fields'] as const,
+  scanRun: (req: ScanRequest) => ['scan-run', req] as const,
+  savedScans: ['saved-scans'] as const,
+};
+
+export function useInstrumentSearch(q: string, exchange?: string) {
+  return useQuery({
+    queryKey: keys.instruments(q, exchange),
+    queryFn: () => http.get<Instrument[]>('/instruments', { q, exchange, limit: 25 }),
+    enabled: q.trim().length > 0,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** All stored candles, or only those from `start` (ISO date) onwards. */
+export function useCandles(instrumentId: number | undefined, interval: Interval, start?: string) {
+  return useQuery({
+    queryKey: keys.candles(instrumentId ?? -1, interval, start),
+    queryFn: () => http.get<CandleSeries>(`/candles/${instrumentId}`, { interval, start }),
+    enabled: instrumentId !== undefined,
+  });
+}
+
+export function useIndicators() {
+  return useQuery({
+    queryKey: keys.indicators,
+    queryFn: () => http.get<IndicatorInfo[]>('/calcs/indicators'),
+    staleTime: Infinity,
+  });
+}
+
+export function useCalcDefinitions() {
+  return useQuery({ queryKey: keys.calcDefinitions, queryFn: () => http.get<CalcDefinition[]>('/calcs/definitions') });
+}
+
+/** Computes (and stores) an indicator on the backend, then returns its series. */
+export function calcSeriesQuery(
+  instrumentId: number | undefined,
+  interval: Interval,
+  name: string,
+  params: Record<string, ParamValue>,
+) {
+  return queryOptions({
+    queryKey: keys.calc(instrumentId ?? -1, interval, name, params),
+    queryFn: () => http.post<CalcSeries>('/calcs/run', { instrument_id: instrumentId, interval, name, params }),
+    enabled: instrumentId !== undefined,
+    staleTime: 60_000,
+  });
+}
+
+export function useCalcSeries(...args: Parameters<typeof calcSeriesQuery>) {
+  return useQuery(calcSeriesQuery(...args));
+}
+
+/** Several indicators at once, e.g. every overlay on a chart. */
+export function useCalcSeriesList(
+  instrumentId: number | undefined,
+  interval: Interval,
+  selections: { name: string; params: Record<string, ParamValue> }[],
+) {
+  return useQueries({ queries: selections.map((s) => calcSeriesQuery(instrumentId, interval, s.name, s.params)) });
+}
+
+export function useCoverage() {
+  return useQuery({ queryKey: keys.coverage, queryFn: () => http.get<CoverageRow[]>('/coverage') });
+}
+
+export function useIngestRuns() {
+  const client = useQueryClient();
+  const query = useQuery({
+    queryKey: keys.ingestRuns,
+    queryFn: () => http.get<IngestRun[]>('/ingest/runs', { limit: 50 }),
+    // Poll while anything is still running.
+    refetchInterval: (q) => (q.state.data?.some((r) => r.status === 'running') ? 1500 : false),
+  });
+
+  // When the last running ingestion finishes, data that depends on candles is stale.
+  const running = query.data?.filter((r) => r.status === 'running').length ?? 0;
+  const wasRunning = useRef(running);
+  useEffect(() => {
+    if (wasRunning.current > 0 && running === 0) {
+      client.invalidateQueries({ queryKey: keys.coverage });
+      client.invalidateQueries({ queryKey: ['candles'] });
+      client.invalidateQueries({ queryKey: ['calc'] });
+      client.invalidateQueries({ queryKey: ['scan-run'] });
+    }
+    wasRunning.current = running;
+  }, [running, client]);
+
+  return query;
+}
+
+export interface IngestRequest {
+  instrument_ids: number[];
+  interval: Interval;
+  start?: string;
+  end?: string;
+}
+
+export function useIngest() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: IngestRequest) => http.post<{ queued: number }>('/ingest', body),
+    // Picks up the new 'running' rows; useIngestRuns refreshes everything else when they finish.
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.ingestRuns }),
+  });
+}
+
+export function useSyncInstruments() {
+  return useMutation({ mutationFn: () => http.post<{ instruments: number }>('/instruments/sync') });
+}
+
+export function useMarketOverview(universe: string, asOf?: string) {
+  return useQuery({
+    queryKey: ['market-overview', universe, asOf] as const,
+    queryFn: () => http.get<MarketOverview>('/market/overview', { universe, as_of: asOf, limit: 10 }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useWatchlists() {
+  return useQuery({ queryKey: ['watchlists'] as const, queryFn: () => http.get<Watchlist[]>('/watchlists') });
+}
+
+export function useScanFields() {
+  return useQuery({ queryKey: keys.scanFields, queryFn: () => http.get<ScanField[]>('/scans/fields'), staleTime: Infinity });
+}
+
+/** Runs a custom scan; re-runs whenever the request changes, keeping the last result on screen. */
+export function useScanRun(req: ScanRequest) {
+  return useQuery({
+    queryKey: keys.scanRun(req),
+    queryFn: () => http.post<ScanRunResult>('/scans/run', req),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useSavedScans() {
+  return useQuery({ queryKey: keys.savedScans, queryFn: () => http.get<SavedScan[]>('/scans/saved') });
+}
+
+export function useSaveScan() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; definition: ScanDefinition }) =>
+      http.post<{ scan_id: string }>('/scans/saved', body),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.savedScans }),
+  });
+}
+
+export function useDeleteScan() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (scanId: string) => http.delete<{ deleted: string }>(`/scans/saved/${scanId}`),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.savedScans }),
+  });
+}
+
+export function useSectorBreadth(universe: string, periods: number[], asOf?: string) {
+  return useQuery({
+    queryKey: ['sector-breadth', universe, periods, asOf] as const,
+    queryFn: () => http.get<SectorBreadth>('/market/sector-breadth', { universe, as_of: asOf, periods }),
+    placeholderData: keepPreviousData,
+  });
+}

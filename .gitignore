@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Secrets and data
+backend/.env
+backend/data/
+*.duckdb
+*.duckdb.wal
+
+# Node
+node_modules/
+frontend/dist/
+
+# Nightly job logs
+backend/logs/
+
+# Angel One SDK writes logs/<date>/app.log in the working directory
+logs/
+*.log
+
+# Personal Claude Code settings (shared skills and CLAUDE.md are committed)
+.claude/settings.local.json
+
+# Build caches
+*.tsbuildinfo

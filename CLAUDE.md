@@ -25,7 +25,8 @@
 - Then run the full backend test suite (`pytest` in `backend/`), not just the new tests, and fix every failure before calling the work done.
 - If a failure or an edge case has no obvious right answer, don't pick one silently. Explain the issue and its context, lay out a few possible solutions with their trade-offs and your recommendation, then wait for my decision and implement what I choose.
 
-## Before every commit: secret checks
+## Before every commit: secret checks and message
+- Commit message: a summary of the changes made. A short subject line naming the change, then a body listing what changed and where (features, files/areas, docs), in plain words.
 - Review the file list (`git status --short`): no `.env`, `ngrok-policy.yml`, logs, `*.duckdb`, or other local/secret files staged. New secret files get a `.gitignore` entry first.
 - Scan the staged diff (`git diff --cached`) for credentials: API keys, passwords, PINs, TOTP secrets, tokens (`Bearer`, `eyJ...` JWTs), `authtoken`, IPs/MAC addresses, real account or client codes. Example files must hold placeholders only.
 - If anything turns up, unstage it, move the value to a gitignored file, and tell me before committing.

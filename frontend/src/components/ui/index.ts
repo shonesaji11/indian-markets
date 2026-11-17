@@ -9,3 +9,4 @@ export { Checkbox, Field, SegmentedControl, Select, TextInput, type SelectOption
 export { PageHeader } from './PageHeader';
 export { Sparkline, type SparkPoint } from './Sparkline';
 export { StatTile } from './StatTile';
+export { SwatchPicker } from './SwatchPicker';

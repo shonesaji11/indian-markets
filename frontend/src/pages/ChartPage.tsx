@@ -2,19 +2,24 @@ import { useMemo } from 'react';
 import { useCalcSeriesList, useCandles, useIngest } from '@/api/queries';
 import { INTERVALS, type Interval } from '@/api/types';
 import { PriceChart, toOhlc, type ChartSeries, type ValuePoint } from '@/components/charts';
-import { Button, Card, Chip, Delta, EmptyState, ErrorMessage, Field, Select } from '@/components/ui';
-import { addIndicator, indicatorsCodec, type ActiveIndicator } from '@/features/indicators/activeIndicators';
+import { Button, Card, Chip, Delta, EmptyState, ErrorMessage, Field, Select, SwatchPicker } from '@/components/ui';
+import { addIndicator, indicatorsCodec, recolorIndicator, type ActiveIndicator } from '@/features/indicators/activeIndicators';
 import { IndicatorPicker } from '@/features/indicators/IndicatorPicker';
-import { isOverlay, paramsLabel, toChartSeries } from '@/features/indicators/toChartSeries';
+import { SERIES_SLOTS, isOverlay, paramsLabel, toChartSeries } from '@/features/indicators/toChartSeries';
 import { InstrumentPicker } from '@/features/instruments/InstrumentPicker';
 import { useThemeVersion } from '@/hooks/useTheme';
 import { useUrlState } from '@/hooks/useUrlState';
 import { cssVar, fmt } from '@/lib/format';
+import { loadSetting, saveSetting } from '@/lib/storage';
 import { toChartTime } from '@/lib/time';
 
 const slotColor = (slot: number) => cssVar(`--series-${slot}`);
+/** Slot n (1-based) is index n - 1 here. */
+const SLOT_COLORS = Array.from({ length: SERIES_SLOTS }, (_, i) => `var(--series-${i + 1})`);
 
 const DEFAULT_INDICATORS: ActiveIndicator[] = [{ name: 'sma', params: { period: 50, source: 'close' }, slot: 2 }];
+/** The last indicator set you chose; used for any chart whose link doesn't carry its own. */
+const INDICATORS_KEY = 'markets.chart.indicators';
 
 export function ChartPage() {
   const [instrumentParam, setInstrument] = useUrlState('instrument');
@@ -23,7 +28,17 @@ export function ChartPage() {
   const interval = intervalParam as Interval;
 
   const themeVersion = useThemeVersion();
-  const [indicators, setIndicators] = useUrlState('ind', DEFAULT_INDICATORS, indicatorsCodec);
+  // Read on every render (cheap) so a link opened from within the chart page also gets the latest set.
+  const savedRaw = loadSetting(INDICATORS_KEY);
+  const savedIndicators = useMemo(
+    () => (savedRaw == null ? DEFAULT_INDICATORS : indicatorsCodec.parse(savedRaw)),
+    [savedRaw],
+  );
+  const [indicators, setUrlIndicators] = useUrlState('ind', savedIndicators, indicatorsCodec);
+  const setIndicators = (next: ActiveIndicator[]) => {
+    saveSetting(INDICATORS_KEY, indicatorsCodec.format(next));
+    setUrlIndicators(next);
+  };
   const candles = useCandles(instrumentId, interval);
   const calcs = useCalcSeriesList(instrumentId, interval, indicators);
   const ingest = useIngest();
@@ -78,7 +93,14 @@ export function ChartPage() {
             {indicators.map((ind, i) => (
               <span key={ind.slot} title={calcs[i]?.data ? `calc_id ${calcs[i].data!.calc_id}` : undefined}>
                 <Chip
-                  color={`var(--series-${ind.slot})`}
+                  colorControl={
+                    <SwatchPicker
+                      colors={SLOT_COLORS}
+                      value={ind.slot - 1}
+                      taken={indicators.filter((x) => x !== ind).map((x) => x.slot - 1)}
+                      onChange={(c) => setIndicators(recolorIndicator(indicators, ind.slot, c + 1))}
+                    />
+                  }
                   onRemove={() => setIndicators(indicators.filter((x) => x.slot !== ind.slot))}
                 >
                   {ind.name}({paramsLabel(ind.params)})

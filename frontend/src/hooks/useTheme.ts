@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { loadSetting, saveSetting } from '@/lib/storage';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
@@ -6,13 +7,8 @@ const STORAGE_KEY = 'markets.theme';
 const media = window.matchMedia('(prefers-color-scheme: light)');
 
 function readPreference(): ThemePreference {
-  try {
-    const value = localStorage.getItem(STORAGE_KEY);
-    if (value === 'light' || value === 'dark') return value;
-  } catch {
-    // storage unavailable (private mode): fall back to the OS setting
-  }
-  return 'system';
+  const value = loadSetting(STORAGE_KEY);
+  return value === 'light' || value === 'dark' ? value : 'system';
 }
 
 function apply(pref: ThemePreference) {
@@ -45,12 +41,7 @@ export function useThemePreference(): [ThemePreference, (pref: ThemePreference) 
   useEffect(() => apply(pref), [pref]);
 
   const update = useCallback((next: ThemePreference) => {
-    try {
-      if (next === 'system') localStorage.removeItem(STORAGE_KEY);
-      else localStorage.setItem(STORAGE_KEY, next);
-    } catch {
-      // not persisted; still applies for this session
-    }
+    saveSetting(STORAGE_KEY, next === 'system' ? null : next);
     apply(next);
     setPref(next);
     bump();

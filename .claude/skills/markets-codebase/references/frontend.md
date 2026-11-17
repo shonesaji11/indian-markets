@@ -31,7 +31,8 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `components/ui/Button.tsx` | `Button` (variant, size, icon, loading) |
 | `components/ui/Card.tsx` | `Card` (title, subtitle, actions, flush, divided) |
 | `components/ui/DataTable.tsx` | `DataTable<T>` + `Column<T>` (generic sortable table; sort is internal via `initialSort`, or controlled via `sort`/`onSortChange`), `SortState`, `sortCodec` (`-key` = descending), `sortRows(rows, get, desc)` (same ordering anywhere) |
-| `components/ui/Feedback.tsx` | `Badge`, `EmptyState`, `ErrorMessage`, `Skeleton`, `Delta` (signed change), `Chip` |
+| `components/ui/Feedback.tsx` | `Badge`, `EmptyState`, `ErrorMessage`, `Skeleton`, `Delta` (signed change), `Chip` (`colorControl` slot replaces its dot) |
+| `components/ui/SwatchPicker.tsx` | `SwatchPicker` (color dot that opens a palette; `taken` marks colors in use) |
 | `components/ui/Field.tsx` | `Field`, `TextInput`, `Checkbox`, `SegmentedControl<T>`, `Select<T>`, `SelectOption` |
 | `components/ui/Bars.tsx` | `Meter`, `SegmentBar`/`Segment`, `DivergingBars`/`DivergingItem` |
 | `components/ui/PageHeader.tsx` | `PageHeader` |
@@ -45,7 +46,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 |---|---|
 | `indicators/IndicatorPicker.tsx` | `IndicatorPicker({onAdd})`, `IndicatorSelection` |
 | `indicators/ParamInputs.tsx` | `ParamInputs({defaults, params, onChange, labelled})`: one input per indicator param (used by IndicatorPicker and the scan builder) |
-| `indicators/activeIndicators.ts` | `ActiveIndicator` (selection + colour slot), `addIndicator(list, sel)`, `indicatorsCodec` (URL form `sma:2:period=50,source=close;rsi:3:period=14`) |
+| `indicators/activeIndicators.ts` | `ActiveIndicator` (selection + colour slot), `addIndicator(list, sel)` (first free colour), `recolorIndicator(list, slot, to)` (swaps with the line that had `to`), `indicatorsCodec` (URL form `sma:2:period=50,source=close;rsi:3:period=14`) |
 | `indicators/toChartSeries.ts` | `SERIES_SLOTS`, `isOverlay(name)`, `paramsLabel`, `toChartSeries(calc, slot, pane, colorOf)` |
 | `instruments/InstrumentPicker.tsx` | `InstrumentPicker({value, onChange, exchange, placeholder})` (debounced search) |
 | `market/CoverageTable.tsx`, `IngestPanel.tsx`, `IngestRunsTable.tsx` | Data page panels |
@@ -55,7 +56,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `scans/ScanResultsTable.tsx` | `ScanResultsTable({rows, extra, sort, onSortChange, empty})`: base columns + one per operand used; row → chart |
 | `overview/BenchmarkTiles.tsx`, `BreadthCard.tsx`, `ScanCard.tsx`, `SectorCard.tsx` | Overview page cards |
 | `overview/SectorBreadthCard.tsx` | Sectors ranked by % above each MA (Meter bars), MA inputs, Min stocks filter; row click → `onSelect` |
-| `sectors/sectorLinks.ts` | `sectorHref(industry, ctx)`, `overviewHref(ctx)` (carry universe / as_of / MAs), `DEFAULT_MAS`, `DEFAULT_SECTOR_SORT`, `DEFAULT_UNIVERSE` |
+| `sectors/sectorLinks.ts` | `sectorHref(industry, ctx)`, `overviewHref(ctx)` (carry universe / as_of / MAs), `DEFAULT_MAS`, `DEFAULT_SECTOR_SORT`, `DEFAULT_UNIVERSE`, `STOCK_UNIVERSES` (watchlists offered in the Overview and Scans universe dropdowns: nifty50, nifty500, niftytotalmarket, nse_traded) |
 | `sectors/SectorStocksPanel.tsx` | `StocksView` ('table' | 'charts'); one sector's stocks via `useScanRun({industry, columns: SMAs})`; Table (ScanResultsTable) or Charts (ChartGrid) |
 | `charts/ChartGrid.tsx` | `GridItem` ({instrument_id, title, price, change}); `ChartGrid({items, onSelect, page, onPageChange, rows=4, months=6})`: paged grid of compact candle charts; columns = as many 240px+ tiles as fit (measured), page = columns × rows so pages are always full; fetches only the visible page; tile header shows price + change; one "Charts by TradingView" credit per grid |
 

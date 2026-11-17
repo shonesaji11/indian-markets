@@ -572,3 +572,58 @@
   margin-top: var(--space-1);
   color: var(--text-muted);
 }
+.ui-swatch-picker {
+  position: relative;
+  display: inline-flex;
+}
+.ui-swatch-picker__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.ui-swatch-picker__trigger:hover,
+.ui-swatch-picker__trigger.is-open {
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.ui-swatch-picker__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.ui-swatch-picker__menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: -6px;
+  z-index: 10;
+  display: grid;
+  grid-template-columns: repeat(4, 22px);
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.ui-swatch-picker__swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+.ui-swatch-picker__swatch.is-taken {
+  outline: 1px dashed var(--text-muted);
+  outline-offset: 2px;
+}
+.ui-swatch-picker__swatch.is-current {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
+}

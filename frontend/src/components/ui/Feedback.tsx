@@ -44,14 +44,16 @@ export function Delta({ value, format, arrow = false, pill = false }: DeltaProps
 
 interface ChipProps {
   color?: string;
+  /** Replaces the static color dot, e.g. with a SwatchPicker. */
+  colorControl?: ReactNode;
   onRemove?: () => void;
   children: ReactNode;
 }
 
-export function Chip({ color, onRemove, children }: ChipProps) {
+export function Chip({ color, colorControl, onRemove, children }: ChipProps) {
   return (
     <span className="ui-chip">
-      {color && <span className="ui-chip__swatch" style={{ background: color }} />}
+      {colorControl ?? (color && <span className="ui-chip__swatch" style={{ background: color }} />)}
       {children}
       {onRemove && (
         <button type="button" className="ui-button ui-button--ghost ui-button--sm" onClick={onRemove} aria-label="Remove">

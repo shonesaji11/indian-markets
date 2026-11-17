@@ -15,6 +15,11 @@ export function addIndicator(list: ActiveIndicator[], sel: IndicatorSelection): 
   return [...list, { ...sel, slot }];
 }
 
+/** Give the indicator in `slot` the color `to`; whichever indicator had `to` takes the old one. */
+export function recolorIndicator(list: ActiveIndicator[], slot: number, to: number): ActiveIndicator[] {
+  return list.map((i) => (i.slot === slot ? { ...i, slot: to } : i.slot === to ? { ...i, slot } : i));
+}
+
 function parseValue(raw: string): ParamValue {
   if (raw === 'true' || raw === 'false') return raw === 'true';
   return raw !== '' && !Number.isNaN(Number(raw)) ? Number(raw) : raw;

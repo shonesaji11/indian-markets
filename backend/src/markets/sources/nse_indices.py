@@ -12,7 +12,9 @@ from dataclasses import dataclass
 
 import httpx
 
-URL = "https://www.niftyindices.com/IndexConstituent/ind_{index}list.csv"
+URL = "https://www.niftyindices.com/IndexConstituent/ind_{file}.csv"
+# Most files are ind_<slug>list.csv; these break the pattern.
+_FILE_NAMES = {"niftytotalmarket": "niftytotalmarket_list"}
 # The site rejects requests without a browser-like user agent.
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0 Safari/537.36"}
 
@@ -27,8 +29,9 @@ class NseConstituent:
 
 class NseIndexSource:
     def constituents(self, index: str) -> list[NseConstituent]:
-        """`index` is the slug used in the file name: nifty50, nifty500, niftynext50, ..."""
-        resp = httpx.get(URL.format(index=index), headers=HEADERS, timeout=60, follow_redirects=True)
+        """`index` is the slug used in the file name: nifty50, nifty500, niftytotalmarket, ..."""
+        file = _FILE_NAMES.get(index, f"{index}list")
+        resp = httpx.get(URL.format(file=file), headers=HEADERS, timeout=60, follow_redirects=True)
         resp.raise_for_status()
         rows = csv.DictReader(io.StringIO(resp.text))
         return [

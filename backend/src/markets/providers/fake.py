@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime
-from typing import Iterator
+from datetime import date, datetime, timedelta
+from typing import Iterator, Sequence
 
 import numpy as np
 import pandas as pd
@@ -33,6 +33,13 @@ class FakeProvider:
 
     def close(self) -> None:
         pass
+
+    def last_trade_dates(self, exchange: str, tokens: Sequence[str]) -> dict[str, date]:
+        """Every instrument last traded on the most recent weekday."""
+        day = date.today()
+        while day.weekday() >= 5:
+            day -= timedelta(days=1)
+        return {t: day for t in tokens}
 
     def fetch_candles(self, provider_token: str, exchange: str, interval: Interval, window: DateRange) -> pd.DataFrame:
         base_price = _UNIVERSE[int(provider_token) - 1][4]

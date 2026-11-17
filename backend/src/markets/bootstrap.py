@@ -82,7 +82,7 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
     provider = provider or build_provider(settings)
 
     ingestion = IngestionService(provider, instruments, candles, ingestion_log)
-    watchlist_sync = WatchlistService(watchlist_specs, watchlists, instruments, constituents or NseIndexSource())
+    watchlist_sync = WatchlistService(watchlist_specs, watchlists, instruments, constituents or NseIndexSource(), provider)
     breadth = BreadthService(DuckBreadthRepository(db), BREADTH_UNIVERSES, BREADTH_PERIODS)
     benchmarks = next((s.members for s in watchlist_specs if s.watchlist_id == "benchmarks"), ())
 

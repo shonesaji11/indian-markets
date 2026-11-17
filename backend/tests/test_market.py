@@ -118,6 +118,35 @@ def test_daily_update_skips_retry_pass_when_all_ok(container, monkeypatch):
     assert report.retried == 0 and report.failed == 0 and slept == []
 
 
+def test_traded_watchlist_keeps_stocks_from_latest_session(container, monkeypatch):
+    from datetime import date
+
+    from markets.pipelines.watchlists import WatchlistService
+    from markets.universes import WatchlistSpec
+
+    spec = WatchlistSpec("traded", "Traded", traded_series=("EQ",))
+    service = WatchlistService([spec], container.watchlists, container.instruments, None, container.provider)
+    find = lambda s: container.instruments.find("NSE", s).instrument_id  # noqa: E731
+    token = lambda s: container.instruments.provider_token(find(s), container.provider.name)  # noqa: E731
+
+    candidates = container.instruments.equity_tokens("NSE", ("EQ",), container.provider.name)
+    assert len(candidates) == 4  # the index is not an equity
+
+    # HDFCBANK last traded a day earlier (suspended); INFY has no quote at all.
+    quotes = {token("RELIANCE-EQ"): date(2026, 11, 17), token("TCS-EQ"): date(2026, 11, 17),
+              token("HDFCBANK-EQ"): date(2026, 11, 14)}
+    monkeypatch.setattr(container.provider, "last_trade_dates", lambda exchange, tokens: quotes)
+    result = service.sync("traded")
+    assert result["members"] == 2
+    assert sorted(container.watchlists.member_ids("traded")) == sorted([find("RELIANCE-EQ"), find("TCS-EQ")])
+
+    # No quotes at all (Angel down): fail loudly and keep yesterday's members.
+    monkeypatch.setattr(container.provider, "last_trade_dates", lambda exchange, tokens: {})
+    with pytest.raises(RuntimeError, match="keeping the current membership"):
+        service.sync("traded")
+    assert len(container.watchlists.member_ids("traded")) == 2
+
+
 def test_overview_endpoint(container, reliance_id):
     container.watchlist_sync.sync_all()
     for ref in ("RELIANCE-EQ", "TCS-EQ", "INFY-EQ", "HDFCBANK-EQ", "Nifty 50"):

@@ -9,7 +9,7 @@ float columns open, high, low, close, volume.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Iterable, Optional, Protocol, Sequence
 
 import pandas as pd
@@ -26,6 +26,10 @@ class MarketDataProvider(Protocol):
 
     def fetch_candles(self, provider_token: str, exchange: str, interval: Interval, window: DateRange) -> pd.DataFrame:
         """Candles for one instrument. The provider handles its own paging and rate limits."""
+        ...
+
+    def last_trade_dates(self, exchange: str, tokens: Sequence[str]) -> dict[str, date]:
+        """Date of each instrument's last trade, from live quotes. Tokens without a quote are left out."""
         ...
 
     def close(self) -> None:
@@ -57,6 +61,8 @@ class InstrumentRepository(Protocol):
                limit: int = 50) -> list[Instrument]: ...
 
     def provider_token(self, instrument_id: int, provider: str) -> Optional[str]: ...
+
+    def equity_tokens(self, exchange: str, series: Sequence[str], provider: str) -> pd.DataFrame: ...
 
 
 class CandleRepository(Protocol):

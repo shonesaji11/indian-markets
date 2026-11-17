@@ -7,13 +7,11 @@ import { BreadthCard } from '@/features/overview/BreadthCard';
 import { ScanCard } from '@/features/overview/ScanCard';
 import { SectorBreadthCard } from '@/features/overview/SectorBreadthCard';
 import { SectorCard } from '@/features/overview/SectorCard';
-import { DEFAULT_MAS, sectorHref } from '@/features/sectors/sectorLinks';
+import { DEFAULT_MAS, STOCK_UNIVERSES, sectorHref } from '@/features/sectors/sectorLinks';
 import '@/features/overview/overview.css';
 import { intCodec, intListCodec, useUrlState } from '@/hooks/useUrlState';
 import { fmt } from '@/lib/format';
 
-/** Watchlists that make sense as a stock universe (index lists, not index-of-indices). */
-const STOCK_UNIVERSES = new Set(['nifty500', 'nifty50']);
 
 export function OverviewPage() {
   const [universe, setUniverse] = useUrlState('universe', 'nifty500');

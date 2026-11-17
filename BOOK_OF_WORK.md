@@ -11,6 +11,10 @@ Format: **title** (area, date added): the problem, options considered, current b
 
 ## Known limitations
 
+- **Traded-stocks list includes ETFs and splits on series changes** (data, 2026-11-18): `nse_traded` is every NSE `-EQ`/`-BE`/`-BZ` instrument whose Angel quote shows a trade in the latest session. Angel lists ETFs like stocks, so ~200 ETFs are in it (kept by choice; dropping by name pattern was the alternative). A stock moving between EQ and BE gets a new Angel symbol and token, so its history splits across two instruments; fix by linking on ISIN (not in Angel's scrip master, so it needs another source). On this universe the Overview movers fill with illiquid circuit-hitters; a minimum-turnover filter would fix that.
+
+- **No sector for stocks outside Nifty Total Market** (data, 2026-11-18): NSE's index files (niftyindices.com) carry an Industry column, and the broadest, Nifty Total Market, covers ~750 stocks. NSE's full equity list (`EQUITY_L.csv`, ~2,600 stocks) has no sector. Options: NSE's per-stock quote API (`industryInfo`: macro, sector, industry, basic industry), which is unofficial, cookie-gated and rate-limited; BSE's scrip list (industry per scrip, matched by ISIN), which is also unofficial and uses BSE's own classification; or a paid data vendor. Current behaviour: those stocks show as "Unclassified" in sector views.
+
 - **Public link serves the Vite dev server** (launcher, 2026-11-17): the ngrok tunnel points at `npm run dev`, so remote loads are unbundled and slower, and the only protection is ngrok basic auth (one shared password; the app itself has no login). Options: serve the built `frontend/dist` from FastAPI on one port; ngrok Google login instead of a password. Current behaviour: works, protected by `ngrok-policy.yml`.
 
 - **Stored breadth can lag ad-hoc fetches** (sector breadth, 2026-11-17): a day's breadth is stored on first read; bars fetched later that same day via the Data page or "Fetch latest" aren't reflected until the nightly update recomputes the last 10 days. Fix if it matters: recompute breadth after any ingest.
@@ -24,6 +28,8 @@ Format: **title** (area, date added): the problem, options considered, current b
 
 
 ## Ideas (later)
+
+- **Daily bars from NSE's bhavcopy** (data, 2026-11-18): NSE publishes one end-of-day file per session (`BhavCopy_NSE_CM_0_0_0_<yyyymmdd>_F_0000.csv.zip` on nsearchives.nseindia.com) with open/high/low/close/volume for every traded security. One download could replace ~2,600 Angel requests a night (seconds instead of ~35 min). Caveat: the bhavcopy is not adjusted for splits and bonuses, while Angel's history is, so the two would need reconciling.
 
 - **F&O stocks universe** (scans/overview, 2026-11-18): flag F&O stocks and offer "F&O stocks" in the universe dropdown on Overview and Scans. Sketch: an `fno` watchlist synced nightly from the stored scrip master (underlyings of live NFO `FUTSTK` contracts, mapped to NSE `-EQ`), so membership history and nightly price fetching come for free. Caveats: no history before the first sync (NSE publishes past changes), excluded stocks linger until their last contract expires (up to ~3 months), name mismatches skipped and logged.
 - **Open-interest signals for F&O stocks** (scans, 2026-11-18): use futures OI (long/short build-up, OI change vs price change, PCR) as scan signals on the F&O universe. Angel's OI build-up and PCR APIs cover today only, so history has to be collected nightly from now on (or daily futures candles, which carry OI); nothing can be backfilled from Angel. Depends on the F&O universe being in place.

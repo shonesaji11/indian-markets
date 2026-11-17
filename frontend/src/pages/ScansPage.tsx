@@ -5,15 +5,13 @@ import { Card, Checkbox, ErrorMessage, Field, PageHeader, Select, TextInput, sor
 import { FilterBuilder } from '@/features/scans/FilterBuilder';
 import { EMPTY_FILTER, filterCodec, prune } from '@/features/scans/filterTree';
 import { SavedScans } from '@/features/scans/SavedScans';
+import { DEFAULT_UNIVERSE, STOCK_UNIVERSES } from '@/features/sectors/sectorLinks';
 import { ScanResultsTable } from '@/features/scans/ScanResultsTable';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { boolCodec, useUrlState, useUrlUpdate } from '@/hooks/useUrlState';
 import { fmt } from '@/lib/format';
 
-const DEFAULT_UNIVERSE = 'nifty500';
 const DEFAULT_SORT: SortState = { key: 'symbol' };
-/** Index-based universes that make sense to scan, plus every instrument with daily data. */
-const UNIVERSES = new Set(['nifty500', 'nifty50']);
 
 export function ScansPage() {
   // Everything lives in the URL: Back from a chart, reloads and shared links restore the exact scan.
@@ -39,7 +37,7 @@ export function ScansPage() {
 
   const { data: watchlists = [] } = useWatchlists();
   const universeOptions = [
-    ...watchlists.filter((w) => UNIVERSES.has(w.watchlist_id)).map((w) => ({ value: w.watchlist_id, label: w.name })),
+    ...watchlists.filter((w) => STOCK_UNIVERSES.has(w.watchlist_id)).map((w) => ({ value: w.watchlist_id, label: w.name })),
     { value: 'all', label: 'All tracked' },
   ];
 

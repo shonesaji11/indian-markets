@@ -15,8 +15,8 @@ from __future__ import annotations
 import logging
 import re
 import time
-from datetime import datetime, timedelta
-from typing import Iterator, Optional
+from datetime import date, datetime, timedelta
+from typing import Callable, Iterator, Optional, Sequence
 
 import httpx
 import pandas as pd
@@ -60,6 +60,9 @@ _INSTRUMENT_TYPES = {"": "EQ", "AMXIDX": "INDEX"}
 
 # Slightly under the documented 2/s, 80/min, 5000/hr so clock skew never trips them.
 CANDLE_RATE_LIMITS = ((2, 1.05), (78, 60.0), (4900, 3600.0))
+# Quote docs disagree (1/s in the text, 10/s in the table); stay at the stricter one. ~60 calls a night.
+QUOTE_RATE_LIMITS = ((1, 1.05), (450, 60.0), (4500, 3600.0))
+QUOTE_BATCH = 50
 _TOKEN_ERRORS = ("AG8001", "AG8002", "AG8003")
 
 
@@ -72,6 +75,7 @@ class AngelOneProvider:
         self._max_retries = max_retries
         self._api = None
         self._limiter = RateLimiter(CANDLE_RATE_LIMITS)
+        self._quote_limiter = RateLimiter(QUOTE_RATE_LIMITS)
 
     # ---- instruments -------------------------------------------------------------
 
@@ -99,32 +103,51 @@ class AngelOneProvider:
             rows.extend(self._call_candles(params))
         return _candles_frame(rows)
 
+    # ---- quotes ------------------------------------------------------------------
+
+    def last_trade_dates(self, exchange: str, tokens: Sequence[str]) -> dict[str, date]:
+        out: dict[str, date] = {}
+        for i in range(0, len(tokens), QUOTE_BATCH):
+            batch = list(tokens[i:i + QUOTE_BATCH])
+            data = self._call(self._quote_limiter, lambda api: api.getMarketData("FULL", {exchange: batch}),
+                              f"getMarketData for {len(batch)} {exchange} tokens")
+            for q in (data or {}).get("fetched") or []:
+                traded = _parse_trade_time(q.get("exchTradeTime"))
+                if traded:
+                    out[str(q["symbolToken"])] = traded.date()
+        return out
+
     def _call_candles(self, params: dict) -> list[list]:
+        return self._call(self._limiter, lambda api: api.getCandleData(params),
+                          f"getCandleData for {params['symboltoken']}") or []
+
+    def _call(self, limiter: RateLimiter, request: Callable, what: str):
+        """Run one SmartAPI request with rate limiting and retries; returns the response's `data`."""
         last_error = None
         for attempt in range(self._max_retries):
-            self._limiter.acquire()
+            limiter.acquire()
             try:
-                resp = self._session().getCandleData(params)
+                resp = request(self._session())
             except ProviderError:
                 raise  # login problems will not fix themselves on retry
             except Exception as exc:  # SmartConnect raises plain exceptions on HTTP/rate-limit errors
                 last_error = str(exc)
-                log.warning("getCandleData failed (attempt %d): %s", attempt + 1, exc)
+                log.warning("%s failed (attempt %d): %s", what, attempt + 1, exc)
                 if attempt + 1 < self._max_retries:
                     # Rate-limit rejections need the per-minute window to drain: 15s, 30s, 60s.
                     rate_limited = "exceeding access rate" in last_error
                     time.sleep(min(15.0 * 2 ** attempt, 60.0) if rate_limited else 1.5 * (attempt + 1))
                 continue
             if resp and resp.get("status"):
-                return resp.get("data") or []
+                return resp.get("data")
             code = str(resp.get("errorcode", "")) if resp else ""
             last_error = f"{code}: {resp.get('message')}" if resp else "empty response"
-            log.warning("getCandleData error (attempt %d): %s", attempt + 1, last_error)
+            log.warning("%s error (attempt %d): %s", what, attempt + 1, last_error)
             if code in _TOKEN_ERRORS:
                 self._api = None
             if attempt + 1 < self._max_retries:
                 time.sleep(1.5 * (attempt + 1))
-        raise ProviderError(f"getCandleData failed for {params['symboltoken']}: {last_error}")
+        raise ProviderError(f"{what} failed: {last_error}")
 
     # ---- plumbing ----------------------------------------------------------------
 
@@ -191,6 +214,14 @@ def _parse_scrip(row: dict) -> Optional[ProviderInstrument]:
         strike=strike / 100 if strike and strike > 0 else None,  # strikes are in paise too
     )
     return ProviderInstrument(instrument=instrument, provider=AngelOneProvider.name, provider_token=str(token))
+
+
+def _parse_trade_time(value) -> Optional[datetime]:
+    """Quote times look like "21-Jun-2023 10:46:10" (IST)."""
+    try:
+        return datetime.strptime(value, "%d-%b-%Y %H:%M:%S")
+    except (TypeError, ValueError):
+        return None
 
 
 def _to_float(value) -> Optional[float]:

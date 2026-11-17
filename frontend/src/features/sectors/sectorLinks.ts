@@ -2,6 +2,8 @@ import type { SortState } from '@/components/ui';
 import { intListCodec } from '@/hooks/useUrlState';
 
 export const DEFAULT_UNIVERSE = 'nifty500';
+/** Watchlists that make sense as a stock universe (index lists, not lists of indices). */
+export const STOCK_UNIVERSES = new Set(['nifty50', 'nifty500', 'niftytotalmarket', 'nse_traded']);
 export const DEFAULT_MAS = [10, 20];
 export const DEFAULT_SECTOR_SORT: SortState = { key: 'pct_change', desc: true };
 

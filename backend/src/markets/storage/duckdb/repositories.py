@@ -129,6 +129,20 @@ class DuckInstrumentRepository:
         ).fetchone()
         return row[0] if row else None
 
+    def equity_tokens(self, exchange: str, series: Sequence[str], provider: str) -> pd.DataFrame:
+        """Equities on `exchange` whose symbol ends in -<series> (e.g. RELIANCE-EQ), with provider tokens.
+        Columns: instrument_id, token."""
+        pattern = f"-({'|'.join(series)})$"
+        return self._db.cursor().execute(
+            """
+            SELECT i.instrument_id, m.provider_token AS token
+            FROM instruments i JOIN instrument_provider_map m USING (instrument_id)
+            WHERE i.exchange = ? AND i.instrument_type = 'EQ' AND m.provider = ? AND regexp_matches(i.symbol, ?)
+            ORDER BY i.instrument_id
+            """,
+            [exchange, provider, pattern],
+        ).df()
+
 
 class DuckCandleRepository:
     def __init__(self, db: Database):

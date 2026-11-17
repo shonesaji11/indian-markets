@@ -66,3 +66,29 @@ def test_sdk_error_logs_mask_secrets(tmp_path):
     for secret in ("APIKEY123", "1.2.3.4", "eyJSECRET", "1234", "654321", "eyJJWT", "eyJREFRESH"):
         assert secret not in text
     assert "'Authorization': '***'" in text and "'exchange': 'NSE'" in text
+
+
+class _QuoteSession:
+    """Answers getMarketData with one quote per token; token '0' has no usable trade time."""
+
+    def __init__(self):
+        self.batches = []
+
+    def getMarketData(self, mode, exchange_tokens):
+        tokens = exchange_tokens["NSE"]
+        self.batches.append(len(tokens))
+        fetched = [{"symbolToken": t, "exchTradeTime": "" if t == "0" else "17-Nov-2026 15:29:59"} for t in tokens]
+        return {"status": True, "data": {"fetched": fetched, "unfetched": []}}
+
+
+def test_last_trade_dates_batches_by_50(monkeypatch):
+    from datetime import date
+
+    p, _ = _provider(monkeypatch, fail=0)
+    p._quote_limiter = _NoLimit()
+    p._api = _QuoteSession()
+    tokens = [str(i) for i in range(120)]
+    dates = p.last_trade_dates("NSE", tokens)
+    assert p._api.batches == [50, 50, 20]
+    assert len(dates) == 119 and "0" not in dates  # unparseable time is left out
+    assert set(dates.values()) == {date(2026, 11, 17)}

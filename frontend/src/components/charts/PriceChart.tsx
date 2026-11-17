@@ -46,7 +46,8 @@ interface PriceChartProps {
   candles: OhlcPoint[];
   volume?: ValuePoint[];
   series?: ChartSeries[];
-  height?: number;
+  /** Pixels, or any CSS height (e.g. one based on the window). */
+  height?: number | string;
   showTime?: boolean;
   /**
    * Miniature: candles only, static (no scroll, zoom or crosshair), no axes, last-price marker or

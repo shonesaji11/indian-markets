@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import type { ScanColumn, ScanRow } from '@/api/types';
 import { DataTable, Delta, type Column, type SortState } from '@/components/ui';
+import { toListItems, useOpenChart, type ChartListInfo } from '@/features/charts/chartList';
 import { fmt } from '@/lib/format';
 import { formatDate } from '@/lib/time';
 
@@ -24,15 +24,17 @@ interface ScanResultsTableProps {
   rows: ScanRow[];
   /** Operands used by the filter; ones not already shown get their own column. */
   extra: ScanColumn[];
+  /** Names the list shown beside the chart a row opens. */
+  list: ChartListInfo;
   sort: SortState;
   onSortChange: (s: SortState) => void;
   /** Shown instead of rows when there are none (defaults to a no-matches message). */
   empty?: string;
 }
 
-/** Matched instruments; clicking a row opens its chart (Back returns to the same scan). */
-export function ScanResultsTable({ rows, extra, sort, onSortChange, empty = 'No instruments match these conditions.' }: ScanResultsTableProps) {
-  const navigate = useNavigate();
+/** Matched instruments; clicking a row opens its chart with the rows alongside, in the order shown (Back returns to the scan). */
+export function ScanResultsTable({ rows, extra, list, sort, onSortChange, empty = 'No instruments match these conditions.' }: ScanResultsTableProps) {
+  const openChart = useOpenChart();
   const columns = useMemo(() => {
     const shown = new Set(BASE.map((c) => c.key));
     const added: Column<ScanRow>[] = extra
@@ -52,7 +54,7 @@ export function ScanResultsTable({ rows, extra, sort, onSortChange, empty = 'No 
       columns={columns}
       rows={rows}
       rowKey={(r) => r.instrument_id}
-      onRowClick={(r) => navigate(`/chart?instrument=${r.instrument_id}&interval=1d`)}
+      onRowClick={(r, shown) => openChart(r.instrument_id, { ...list, items: toListItems(shown) })}
       sort={sort}
       onSortChange={onSortChange}
       empty={empty}

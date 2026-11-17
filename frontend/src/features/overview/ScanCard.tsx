@@ -42,7 +42,8 @@ const BASE: Column<MarketRow>[] = [
 
 interface ScanCardProps {
   scan: ScanResult;
-  onSelect?: (row: MarketRow) => void;
+  /** Also gets the rows in the order shown. */
+  onSelect?: (row: MarketRow, shown: MarketRow[]) => void;
 }
 
 export function ScanCard({ scan, onSelect }: ScanCardProps) {

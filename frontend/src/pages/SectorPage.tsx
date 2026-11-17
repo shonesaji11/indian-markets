@@ -48,6 +48,7 @@ export function SectorPage() {
       <SectorStocksPanel
         industry={industry}
         universe={universe}
+        universeLabel={universeLabel}
         asOf={asOf || undefined}
         periods={periods}
         view={view as StocksView}

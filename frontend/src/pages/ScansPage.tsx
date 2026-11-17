@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useScanRun, useWatchlists } from '@/api/queries';
+import { useSavedScans, useScanRun, useWatchlists } from '@/api/queries';
 import type { SavedScan, ScanDefinition } from '@/api/types';
 import { Card, Checkbox, ErrorMessage, Field, PageHeader, Select, TextInput, sortCodec, type SortState } from '@/components/ui';
 import { FilterBuilder } from '@/features/scans/FilterBuilder';
@@ -40,6 +40,12 @@ export function ScansPage() {
     ...watchlists.filter((w) => STOCK_UNIVERSES.has(w.watchlist_id)).map((w) => ({ value: w.watchlist_id, label: w.name })),
     { value: 'all', label: 'All tracked' },
   ];
+  const { data: saved = [] } = useSavedScans();
+  const universeLabel = universeOptions.find((o) => o.value === universe)?.label ?? universe;
+  const list = {
+    title: saved.find((s) => s.scan_id === savedId)?.name ?? 'Scan results',
+    context: `Scans · ${universeLabel}${data?.as_of ? ` · ${fmt.longDate(data.as_of)}` : ''}`,
+  };
 
   // A saved scan brings its universe and index toggle; "New scan" only clears the conditions.
   const load = (scan: SavedScan | undefined) =>
@@ -100,6 +106,7 @@ export function ScansPage() {
         <ScanResultsTable
           rows={data?.rows ?? []}
           extra={data?.columns ?? []}
+          list={list}
           sort={sort}
           onSortChange={setSort}
           empty={result.isLoading ? 'Running…' : undefined}

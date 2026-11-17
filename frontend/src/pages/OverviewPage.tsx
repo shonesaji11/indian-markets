@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMarketOverview, useSectorBreadth, useWatchlists } from '@/api/queries';
 import type { MarketRow } from '@/api/types';
 import { Button, EmptyState, ErrorMessage, Field, PageHeader, Select, TextInput } from '@/components/ui';
+import { toListItems, useOpenChart } from '@/features/charts/chartList';
 import { BenchmarkTiles } from '@/features/overview/BenchmarkTiles';
 import { BreadthCard } from '@/features/overview/BreadthCard';
 import { ScanCard } from '@/features/overview/ScanCard';
@@ -21,7 +22,6 @@ export function OverviewPage() {
   const [minStocks, setMinStocks] = useUrlState('min', 5, intCodec);
 
   const navigate = useNavigate();
-  const open = (r: MarketRow) => navigate(`/chart?instrument=${r.instrument_id}&interval=1d`);
 
   const { data: watchlists = [] } = useWatchlists();
   const overview = useMarketOverview(universe, asOf || undefined);
@@ -32,6 +32,11 @@ export function OverviewPage() {
   const universeOptions = watchlists
     .filter((w) => STOCK_UNIVERSES.has(w.watchlist_id))
     .map((w) => ({ value: w.watchlist_id, label: w.name }));
+  // Every list on this page opens the chart with that list alongside.
+  const openChart = useOpenChart();
+  const context = `Overview · ${universeLabel}${data?.as_of ? ` · ${fmt.longDate(data.as_of)}` : ''}`;
+  const open = (title: string, rows: MarketRow[] | undefined) => (r: MarketRow, shown?: MarketRow[]) =>
+    openChart(r.instrument_id, { title, context, items: toListItems(shown ?? rows ?? []) });
 
   return (
     <div className="page">
@@ -59,7 +64,7 @@ export function OverviewPage() {
 
       <ErrorMessage error={overview.error} />
 
-      <BenchmarkTiles rows={data?.benchmarks} loading={overview.isLoading} onSelect={open} />
+      <BenchmarkTiles rows={data?.benchmarks} loading={overview.isLoading} onSelect={open('Benchmarks', data?.benchmarks)} />
 
       {data && !data.as_of ? (
         <EmptyState>
@@ -69,7 +74,7 @@ export function OverviewPage() {
         <>
           <div className="overview-split">
             <BreadthCard breadth={data?.breadth} universeLabel={universeLabel} />
-            <SectorCard rows={data?.sectors} onSelect={open} />
+            <SectorCard rows={data?.sectors} onSelect={open('Sectors', data?.sectors)} />
           </div>
           <SectorBreadthCard
             data={breadth.data}
@@ -82,7 +87,7 @@ export function OverviewPage() {
             onSelect={(industry) => navigate(sectorHref(industry, { universe, asOf: asOf || undefined, mas: periods }))}
           />
           <div className="overview-scans">
-            {data?.scans.map((s) => <ScanCard key={s.name} scan={s} onSelect={open} />)}
+            {data?.scans.map((s) => <ScanCard key={s.name} scan={s} onSelect={open(s.title, s.rows)} />)}
           </div>
         </>
       )}

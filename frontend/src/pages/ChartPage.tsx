@@ -1,11 +1,18 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useCalcSeriesList, useCandles, useIngest } from '@/api/queries';
 import { INTERVALS, type Interval } from '@/api/types';
 import { PriceChart, toOhlc, type ChartSeries, type ValuePoint } from '@/components/charts';
 import { Button, Card, Chip, Delta, EmptyState, ErrorMessage, Field, Select, SwatchPicker } from '@/components/ui';
-import { addIndicator, indicatorsCodec, recolorIndicator, type ActiveIndicator } from '@/features/indicators/activeIndicators';
+import {
+  addIndicator,
+  indicatorsCodec,
+  recolorIndicator,
+  type ActiveIndicator,
+} from '@/features/indicators/activeIndicators';
 import { IndicatorPicker } from '@/features/indicators/IndicatorPicker';
 import { SERIES_SLOTS, isOverlay, paramsLabel, toChartSeries } from '@/features/indicators/toChartSeries';
+import { loadChartList } from '@/features/charts/chartList';
+import { RelatedList } from '@/features/charts/RelatedList';
 import { InstrumentPicker } from '@/features/instruments/InstrumentPicker';
 import { useThemeVersion } from '@/hooks/useTheme';
 import { useUrlState } from '@/hooks/useUrlState';
@@ -20,6 +27,10 @@ const SLOT_COLORS = Array.from({ length: SERIES_SLOTS }, (_, i) => `var(--series
 const DEFAULT_INDICATORS: ActiveIndicator[] = [{ name: 'sma', params: { period: 50, source: 'close' }, slot: 2 }];
 /** The last indicator set you chose; used for any chart whose link doesn't carry its own. */
 const INDICATORS_KEY = 'markets.chart.indicators';
+/** Whether the side list is shown (remembered per browser). */
+const LIST_OPEN_KEY = 'markets.chart.listOpen';
+/** Fill the window below the header and toolbar, but never shorter than a usable chart. */
+const CHART_HEIGHT = 'max(420px, calc(100vh - 250px))';
 
 export function ChartPage() {
   const [instrumentParam, setInstrument] = useUrlState('instrument');
@@ -38,6 +49,14 @@ export function ChartPage() {
   const setIndicators = (next: ActiveIndicator[]) => {
     saveSetting(INDICATORS_KEY, indicatorsCodec.format(next));
     setUrlIndicators(next);
+  };
+  // The list the chart was opened from (a scan, a sector...), if any.
+  const [listId] = useUrlState('list');
+  const list = useMemo(() => loadChartList(listId), [listId]);
+  const [listOpen, setListOpenState] = useState(() => loadSetting(LIST_OPEN_KEY) !== '0');
+  const setListOpen = (open: boolean) => {
+    saveSetting(LIST_OPEN_KEY, open ? null : '0');
+    setListOpenState(open);
   };
   const candles = useCandles(instrumentId, interval);
   const calcs = useCalcSeriesList(instrumentId, interval, indicators);
@@ -76,7 +95,7 @@ export function ChartPage() {
   const calcError = calcs.find((q) => q.error)?.error;
 
   return (
-    <div className="page">
+    <div className="page page--wide">
       <Card>
         <div className="ui-row">
           <Field label="Instrument">
@@ -85,81 +104,105 @@ export function ChartPage() {
           <Field label="Interval">
             <Select value={interval} options={INTERVALS} onChange={setInterval} />
           </Field>
+          {indicators.map((ind, i) => (
+            <span
+              key={ind.slot}
+              style={{ alignSelf: 'flex-end' }}
+              title={calcs[i]?.data ? `calc_id ${calcs[i].data!.calc_id}` : undefined}
+            >
+              <Chip
+                colorControl={
+                  <SwatchPicker
+                    colors={SLOT_COLORS}
+                    value={ind.slot - 1}
+                    taken={indicators.filter((x) => x !== ind).map((x) => x.slot - 1)}
+                    onChange={(c) => setIndicators(recolorIndicator(indicators, ind.slot, c + 1))}
+                  />
+                }
+                onRemove={() => setIndicators(indicators.filter((x) => x.slot !== ind.slot))}
+              >
+                {ind.name}({paramsLabel(ind.params)})
+                {calcs[i]?.data && <span className="muted">v{calcs[i].data!.version}</span>}
+              </Chip>
+            </span>
+          ))}
           <div style={{ flex: 1 }} />
           <IndicatorPicker onAdd={(sel) => setIndicators(addIndicator(indicators, sel))} />
         </div>
-        {indicators.length > 0 && (
-          <div className="ui-row" style={{ marginTop: 12 }}>
-            {indicators.map((ind, i) => (
-              <span key={ind.slot} title={calcs[i]?.data ? `calc_id ${calcs[i].data!.calc_id}` : undefined}>
-                <Chip
-                  colorControl={
-                    <SwatchPicker
-                      colors={SLOT_COLORS}
-                      value={ind.slot - 1}
-                      taken={indicators.filter((x) => x !== ind).map((x) => x.slot - 1)}
-                      onChange={(c) => setIndicators(recolorIndicator(indicators, ind.slot, c + 1))}
-                    />
-                  }
-                  onRemove={() => setIndicators(indicators.filter((x) => x.slot !== ind.slot))}
-                >
-                  {ind.name}({paramsLabel(ind.params)})
-                  {calcs[i]?.data && <span className="muted">v{calcs[i].data!.version}</span>}
-                </Chip>
-              </span>
-            ))}
-          </div>
-        )}
       </Card>
 
-      <Card
-        title={
-          instrument ? (
-            <span className="ui-row" style={{ alignItems: 'baseline', gap: 10 }}>
-              <span>
-                {instrument.exchange}:{instrument.symbol}
+      <div className={`chart-layout${!list ? ' chart-layout--single' : listOpen ? '' : ' chart-layout--closed'}`}>
+        <Card
+          title={
+            instrument ? (
+              <span className="ui-row" style={{ alignItems: 'baseline', gap: 10 }}>
+                <span>
+                  {instrument.exchange}:{instrument.symbol}
+                </span>
+                {last && (
+                  <span className="num" style={{ fontSize: 'var(--text-lg)' }}>
+                    {fmt.price(last.close)}
+                  </span>
+                )}
+                {change != null && prev && <Delta value={change / prev.close} format={fmt.pctAbs} arrow />}
               </span>
-              {last && <span className="num" style={{ fontSize: 'var(--text-lg)' }}>{fmt.price(last.close)}</span>}
-              {change != null && prev && (
-                <Delta value={change / prev.close} format={fmt.pctAbs} arrow />
-              )}
-            </span>
+            ) : (
+              'Chart'
+            )
+          }
+          subtitle={
+            instrument
+              ? `${instrument.name ?? ''} · ${ohlc.length.toLocaleString()} bars · ${interval}${last ? ` · last ${fmt.longDate(last.ts)}` : ''}`
+              : undefined
+          }
+          actions={
+            instrument && (
+              <Button
+                size="sm"
+                loading={ingest.isPending}
+                onClick={() =>
+                  ingest.mutate({
+                    instrument_ids: [instrument.instrument_id],
+                    interval,
+                  })
+                }
+              >
+                Fetch latest
+              </Button>
+            )
+          }
+          divided
+          flush
+        >
+          <ErrorMessage error={candles.error ?? calcError} />
+          {instrumentId === undefined ? (
+            <EmptyState>Pick an instrument to chart.</EmptyState>
+          ) : ohlc.length === 0 && !candles.isLoading ? (
+            <EmptyState>
+              No {interval} candles stored for this instrument yet. Use “Fetch latest” to download history.
+            </EmptyState>
           ) : (
-            'Chart'
-          )
-        }
-        subtitle={
-          instrument
-            ? `${instrument.name ?? ''} · ${ohlc.length.toLocaleString()} bars · ${interval}${last ? ` · last ${fmt.longDate(last.ts)}` : ''}`
-            : undefined
-        }
-        actions={
-          instrument && (
-            <Button
-              size="sm"
-              loading={ingest.isPending}
-              onClick={() => ingest.mutate({ instrument_ids: [instrument.instrument_id], interval })}
-            >
-              Fetch latest
-            </Button>
-          )
-        }
-        divided
-        flush
-      >
-        <ErrorMessage error={candles.error ?? calcError} />
-        {instrumentId === undefined ? (
-          <EmptyState>Pick an instrument to chart.</EmptyState>
-        ) : ohlc.length === 0 && !candles.isLoading ? (
-          <EmptyState>
-            No {interval} candles stored for this instrument yet. Use “Fetch latest” to download history.
-          </EmptyState>
-        ) : (
-          <div style={{ padding: '8px 4px 4px' }}>
-            <PriceChart candles={ohlc} volume={volume} series={series} showTime={interval !== '1d'} />
-          </div>
+            <div style={{ padding: '8px 4px 4px' }}>
+              <PriceChart
+                candles={ohlc}
+                volume={volume}
+                series={series}
+                height={CHART_HEIGHT}
+                showTime={interval !== '1d'}
+              />
+            </div>
+          )}
+        </Card>
+        {list && (
+          <RelatedList
+            list={list}
+            current={instrumentId}
+            onSelect={(id) => setInstrument(String(id))}
+            open={listOpen}
+            onOpenChange={setListOpen}
+          />
         )}
-      </Card>
+      </div>
     </div>
   );
 }

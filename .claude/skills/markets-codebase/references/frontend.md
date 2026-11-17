@@ -11,7 +11,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `components/layout/AppShell.tsx` | `AppShell({title, nav, children})`, `NavItem` |
 | `pages/OverviewPage.tsx` | Market overview: BenchmarkTiles, BreadthCard, SectorCard, SectorBreadthCard (row → SectorPage), ScanCards. URL: `universe`, `as_of`, `ma` (MA periods), `min` (min stocks) |
 | `pages/SectorPage.tsx` | One sector's stocks (SectorStocksPanel), "All sectors" back to Overview. URL: `name`, `universe`, `as_of`, `ma`, `view` (table/charts), `page`, `sort` |
-| `pages/ChartPage.tsx` | InstrumentPicker + interval + IndicatorPicker → PriceChart with calc series. URL: `instrument`, `interval`, `ind` |
+| `pages/ChartPage.tsx` | Full-width toolbar (InstrumentPicker, interval, indicator chips, IndicatorPicker) → window-height PriceChart with calc series, plus RelatedList beside it when opened from a list. URL: `instrument`, `interval`, `ind`, `list` (id of a stored ChartList) |
 | `pages/ScansPage.tsx` | Custom scans: FilterBuilder + SavedScans + ScanResultsTable (`useScanRun`, debounced, half-filled conditions pruned). URL: `f` (filter JSON), `universe`, `as_of`, `idx`, `sort`, `scan` (loaded saved id) |
 | `pages/DataPage.tsx` | IngestPanel, CoverageTable, IngestRunsTable |
 
@@ -30,7 +30,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `components/ui/index.ts` | Barrel for everything below |
 | `components/ui/Button.tsx` | `Button` (variant, size, icon, loading) |
 | `components/ui/Card.tsx` | `Card` (title, subtitle, actions, flush, divided) |
-| `components/ui/DataTable.tsx` | `DataTable<T>` + `Column<T>` (generic sortable table; sort is internal via `initialSort`, or controlled via `sort`/`onSortChange`), `SortState`, `sortCodec` (`-key` = descending), `sortRows(rows, get, desc)` (same ordering anywhere) |
+| `components/ui/DataTable.tsx` | `DataTable<T>` + `Column<T>` (generic sortable table; `onRowClick(row, shown)` also gets the rows in displayed order; sort is internal via `initialSort`, or controlled via `sort`/`onSortChange`), `SortState`, `sortCodec` (`-key` = descending), `sortRows(rows, get, desc)` (same ordering anywhere) |
 | `components/ui/Feedback.tsx` | `Badge`, `EmptyState`, `ErrorMessage`, `Skeleton`, `Delta` (signed change), `Chip` (`colorControl` slot replaces its dot) |
 | `components/ui/SwatchPicker.tsx` | `SwatchPicker` (color dot that opens a palette; `taken` marks colors in use) |
 | `components/ui/Field.tsx` | `Field`, `TextInput`, `Checkbox`, `SegmentedControl<T>`, `Select<T>`, `SelectOption` |
@@ -38,7 +38,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `components/ui/PageHeader.tsx` | `PageHeader` |
 | `components/ui/Sparkline.tsx` | `Sparkline`, `SparkPoint` |
 | `components/ui/StatTile.tsx` | `StatTile` (label, value, delta, note) |
-| `components/charts/PriceChart.tsx` | `PriceChart({candles, volume, series, height, showTime, compact})` (`compact` = static miniature: candles only, no axes / last-price marker / logo; caller must credit TradingView once), `toOhlc(candles)`, `OhlcPoint`, `ValuePoint`, `ChartSeries` (multi-pane lines/histograms) |
+| `components/charts/PriceChart.tsx` | `PriceChart({candles, volume, series, height (px or CSS), showTime, compact})` (`compact` = static miniature: candles only, no axes / last-price marker / logo; caller must credit TradingView once), `toOhlc(candles)`, `OhlcPoint`, `ValuePoint`, `ChartSeries` (multi-pane lines/histograms) |
 
 ## Features (`features/<area>/`)
 
@@ -53,11 +53,13 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `scans/filterTree.ts` | `EMPTY_FILTER`, `OP_OPTIONS`, `newCondition`, `newGroup`, `prune`, `operandValue`/`operandFromValue`/`operandOptions` (select encoding `f:close`, `i:macd:signal`), `filterCodec` |
 | `scans/FilterBuilder.tsx` | `FilterBuilder({value, onChange})`: recursive group editor (all/any, max depth 3), condition rows with operand + params, value or operand on the right |
 | `scans/SavedScans.tsx` | `SavedScans({current, definition, onLoad})`: load / save (upsert by name) / delete |
-| `scans/ScanResultsTable.tsx` | `ScanResultsTable({rows, extra, sort, onSortChange, empty})`: base columns + one per operand used; row → chart |
+| `scans/ScanResultsTable.tsx` | `ScanResultsTable({rows, extra, list, sort, onSortChange, empty})`: base columns + one per operand used; row → chart with the rows (in shown order) as the side list named by `list` |
 | `overview/BenchmarkTiles.tsx`, `BreadthCard.tsx`, `ScanCard.tsx`, `SectorCard.tsx` | Overview page cards |
 | `overview/SectorBreadthCard.tsx` | Sectors ranked by % above each MA (Meter bars), MA inputs, Min stocks filter; row click → `onSelect` |
 | `sectors/sectorLinks.ts` | `sectorHref(industry, ctx)`, `overviewHref(ctx)` (carry universe / as_of / MAs), `DEFAULT_MAS`, `DEFAULT_SECTOR_SORT`, `DEFAULT_UNIVERSE`, `STOCK_UNIVERSES` (watchlists offered in the Overview and Scans universe dropdowns: nifty50, nifty500, niftytotalmarket, nse_traded) |
 | `sectors/SectorStocksPanel.tsx` | `StocksView` ('table' | 'charts'); one sector's stocks via `useScanRun({industry, columns: SMAs})`; Table (ScanResultsTable) or Charts (ChartGrid) |
+| `charts/chartList.ts` | `ChartList`/`ChartListItem`/`ChartListInfo`, `useOpenChart()` → `(instrumentId, list?)`: opens the 1d chart and stores the list in sessionStorage under the URL's `list` id (last 10 kept); `loadChartList(id)`, `toListItems(rows)` (MarketRow/ScanRow → items), `shortSymbol`. Use this for every place that opens a chart from a list |
+| `charts/RelatedList.tsx` | `RelatedList({list, current, onSelect, open, onOpenChange})`: chart page side pane; click or ↑/↓ (J/K) steps through; collapses to a rail (remembered via `markets.chart.listOpen`); stacks under the chart below 900px |
 | `charts/ChartGrid.tsx` | `GridItem` ({instrument_id, title, price, change}); `ChartGrid({items, onSelect, page, onPageChange, rows=4, months=6})`: paged grid of compact candle charts; columns = as many 240px+ tiles as fit (measured), page = columns × rows so pages are always full; fetches only the visible page; tile header shows price + change; one "Charts by TradingView" credit per grid |
 
 ## Utilities and styles
@@ -65,9 +67,11 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | File | Exports |
 |---|---|
 | `lib/format.ts` | `fmt` (`price`, `compact`, `int`, `pct` (fraction → signed %), `pctAbs`, `shortDate`, ...), `cssVar(name)` |
+| `lib/storage.ts` | `loadSetting(key, session?)`, `saveSetting(key, value, session?)`: localStorage (or sessionStorage) with try/catch |
 | `lib/time.ts` | `toChartTime(ts)`, `formatDate`, `formatDateTime`, `todayIso` |
 | `hooks/useUrlState.ts` | `useUrlState(key, fallback?, codec?)`: useState stored in a query param (replace, not push; fallback omitted from URL); `UrlCodec<T>`, `boolCodec`, `intCodec`, `intListCodec`; `useUrlUpdate()` sets several params in one update (separate setters in one event overwrite each other). Use for every page filter. |
 | `hooks/useElementWidth.ts` | `useElementWidth()` → `[callbackRef, width]` (ResizeObserver; works for elements that mount late) |
 | `hooks/useDebouncedValue.ts` | `useDebouncedValue(value, delayMs)` |
 | `hooks/useTheme.ts` | `ThemePreference`, `useThemePreference()`, `useThemeVersion()` (re-render charts on theme change) |
+| `components/layout/layout.css` | Shell + `.page` (max 1440px); `.page--wide` for full-width pages (Chart) |
 | `styles/tokens.css`, `global.css` | Design tokens (colours, spacing; light/dark) and base styles; per-area CSS sits next to components |

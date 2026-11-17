@@ -38,7 +38,8 @@ interface DataTableProps<T> {
   columns: Column<T>[];
   rows: T[];
   rowKey: (row: T) => string | number;
-  onRowClick?: (row: T) => void;
+  /** Also gets every row in the order shown, e.g. to step through them on the chart page. */
+  onRowClick?: (row: T, shown: T[]) => void;
   empty?: ReactNode;
   initialSort?: SortState;
   /** Controlled sort (e.g. from useUrlState); when given, the table doesn't keep its own. */
@@ -95,7 +96,7 @@ export function DataTable<T>({
         </thead>
         <tbody>
           {sorted.map((row) => (
-            <tr key={rowKey(row)} data-clickable={!!onRowClick} onClick={onRowClick ? () => onRowClick(row) : undefined}>
+            <tr key={rowKey(row)} data-clickable={!!onRowClick} onClick={onRowClick ? () => onRowClick(row, sorted) : undefined}>
               {columns.map((c) => (
                 <td key={c.key} data-align={c.align}>
                   {c.render ? c.render(row) : (c.value?.(row) ?? '')}

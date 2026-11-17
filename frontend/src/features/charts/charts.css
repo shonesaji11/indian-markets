@@ -61,3 +61,108 @@
   font-size: var(--text-sm);
   text-align: right;
 }
+
+/* Chart page: chart beside the list it was opened from. */
+.chart-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: var(--space-4);
+  align-items: start;
+}
+.chart-layout--closed {
+  grid-template-columns: minmax(0, 1fr) 32px;
+}
+.chart-layout--single {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.chart-list {
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: calc(52px + var(--space-4));
+  max-height: calc(100vh - 52px - 2 * var(--space-4));
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.chart-list--closed {
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-3) 0;
+  font: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chart-list--closed:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.chart-list--closed span {
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+}
+.chart-list__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+.chart-list__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chart-list__meta {
+  font-size: var(--text-sm);
+}
+.chart-list__nav {
+  gap: var(--space-1);
+  flex-wrap: nowrap;
+}
+.chart-list__items {
+  overflow-y: auto;
+}
+.chart-list__item {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  cursor: pointer;
+}
+.chart-list__item:hover {
+  background: var(--surface-hover);
+}
+.chart-list__item[data-active='true'] {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.chart-list__item[data-active='true'] .chart-list__symbol {
+  font-weight: 600;
+}
+
+@media (max-width: 900px) {
+  .chart-layout,
+  .chart-layout--closed {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chart-list {
+    position: static;
+    max-height: 280px;
+  }
+  .chart-list--closed span {
+    writing-mode: horizontal-tb;
+  }
+}

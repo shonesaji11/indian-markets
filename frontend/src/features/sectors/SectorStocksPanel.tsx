@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useScanRun } from '@/api/queries';
 import type { ScanOperand, ScanRow } from '@/api/types';
 import { Card, ErrorMessage, SegmentedControl, sortRows, type SortState } from '@/components/ui';
 import { ChartGrid, type GridItem } from '@/features/charts/ChartGrid';
+import { shortSymbol, toListItems, useOpenChart } from '@/features/charts/chartList';
 import { EMPTY_FILTER } from '@/features/scans/filterTree';
 import { ScanResultsTable } from '@/features/scans/ScanResultsTable';
 
@@ -17,6 +17,8 @@ const VIEW_OPTIONS = [
 interface SectorStocksPanelProps {
   industry: string;
   universe: string;
+  /** Display name of the universe, for the list beside the chart. */
+  universeLabel: string;
   asOf?: string;
   periods: number[];
   view: StocksView;
@@ -29,9 +31,8 @@ interface SectorStocksPanelProps {
 
 /** Every stock in one sector with its SMAs, as a table or a grid of mini charts; both open the full chart. */
 export function SectorStocksPanel(props: SectorStocksPanelProps) {
-  const { industry, universe, asOf, periods, view, onViewChange, page, onPageChange, sort, onSortChange } = props;
-  const navigate = useNavigate();
-  const open = (instrumentId: number) => navigate(`/chart?instrument=${instrumentId}&interval=1d`);
+  const { industry, universe, universeLabel, asOf, periods, view, onViewChange, page, onPageChange, sort, onSortChange } = props;
+  const openChart = useOpenChart();
 
   const columns = useMemo<ScanOperand[]>(
     () => periods.map((p) => ({ type: 'indicator', name: 'sma', params: { period: p, source: 'close' }, output: 'sma' })),
@@ -48,15 +49,21 @@ export function SectorStocksPanel(props: SectorStocksPanelProps) {
   const rows = result.data?.rows ?? [];
 
   // The grid follows the table's sort so switching views keeps the same order.
-  const items: GridItem[] = useMemo(() => {
+  const sorted = useMemo(() => {
     const get = (r: ScanRow) => (sort.key === 'symbol' ? r.symbol : (r[sort.key] as number | string | null));
-    return sortRows(rows, get, sort.desc).map((r) => ({
-      instrument_id: r.instrument_id,
-      title: r.symbol.replace(/-EQ$/, ''),
-      price: r.close,
-      change: r.pct_change,
-    }));
+    return sortRows(rows, get, sort.desc);
   }, [rows, sort]);
+  const items: GridItem[] = useMemo(
+    () =>
+      sorted.map((r) => ({
+        instrument_id: r.instrument_id,
+        title: shortSymbol(r.symbol),
+        price: r.close,
+        change: r.pct_change,
+      })),
+    [sorted],
+  );
+  const list = { title: industry, context: `Sector · ${universeLabel}${asOf ? ` · as of ${asOf}` : ''}` };
   // Column i of the response is the SMA for periods[i].
   const above = (i: number) => {
     const key = result.data?.columns[i]?.key;
@@ -77,11 +84,14 @@ export function SectorStocksPanel(props: SectorStocksPanelProps) {
     >
       <ErrorMessage error={result.error} />
       {view === 'charts' ? (
-        <ChartGrid items={items} onSelect={(i) => open(i.instrument_id)} page={page} onPageChange={onPageChange} />
+        <ChartGrid
+          items={items}
+          onSelect={(i) => openChart(i.instrument_id, { ...list, items: toListItems(sorted) })} page={page} onPageChange={onPageChange} />
       ) : (
         <ScanResultsTable
           rows={rows}
           extra={result.data?.columns ?? []}
+          list={list}
           sort={sort}
           onSortChange={onSortChange}
           empty={result.isLoading ? 'Loading…' : undefined}

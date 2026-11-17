@@ -68,6 +68,10 @@
   max-width: 1440px;
   margin: 0 auto;
 }
+/* Pages that should use the whole window, like the chart. */
+.page--wide {
+  max-width: none;
+}
 
 @media (max-width: 720px) {
   .shell__header {

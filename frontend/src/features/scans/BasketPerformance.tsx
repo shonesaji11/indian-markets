@@ -43,7 +43,7 @@ interface BasketPerformanceProps {
   title: string;
 }
 
-/** Equal-weight basket of the scan results vs the benchmark, from the scan date's close. */
+/** Equal-weight basket of the scan results vs the benchmark, bought at the open after the scan date. */
 export function BasketPerformance({ perf, loading, error, title }: BasketPerformanceProps) {
   const themeVersion = useThemeVersion();
   const lines = useMemo<LineSpec[]>(() => {
@@ -81,7 +81,7 @@ export function BasketPerformance({ perf, loading, error, title }: BasketPerform
   return (
     <Card
       title={title}
-      subtitle={`${perf.counted} of ${perf.total} stocks · equal weight · bought at the ${fmt.shortDate(perf.start)} close · ${perf.sessions} session${perf.sessions === 1 ? '' : 's'}`}
+      subtitle={`${perf.counted} of ${perf.total} stocks · equal weight · picked ${fmt.shortDate(perf.start)}, bought at the next open · ${perf.sessions} session${perf.sessions === 1 ? '' : 's'}`}
     >
       <div className="scan-perf__tiles">
         <StatTile label="Basket" value={pct(basket)} />

@@ -29,7 +29,7 @@ def run(body: ScanRunIn, c: Container = Depends(get_container)) -> dict:
 
 @router.post("/performance")
 def performance(body: ScanPerformanceIn, c: Container = Depends(get_container)) -> dict:
-    """Equal-weight performance of scan results bought at the `start` session's close, vs the benchmark."""
+    """Equal-weight performance of scan results picked on `start` and bought at the next open, vs the benchmark."""
     end = datetime.combine(body.end, time.max) if body.end else None
     try:
         return c.screener.performance(body.instrument_ids, datetime.combine(body.start, time.min), end)

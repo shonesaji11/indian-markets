@@ -112,19 +112,19 @@ class ScreenerService:
 
     def performance(self, instrument_ids: Sequence[int], start: datetime,
                     end: Optional[datetime] = None) -> dict[str, Any]:
-        """Equal-weight buy-and-hold of `instrument_ids` from their close on `start`'s session up to
-        `end` (default: latest stored), with the benchmark over the same sessions."""
+        """Equal-weight buy-and-hold of `instrument_ids` picked on `start`'s session and bought at the
+        next session's open, up to `end` (default: latest stored), with the benchmark over the same sessions."""
         end = end or datetime.now()
         if end < start:
             raise ValueError("the Until date must be on or after the As of date")
         ids = list(dict.fromkeys(instrument_ids))
         bench = self.instruments.find(*self.benchmark.split(":", 1))
-        closes = self.market.daily_closes([*ids, *([bench.instrument_id] if bench else [])], start, end)
-        perf = basket_performance(closes[closes["instrument_id"].isin(ids)], start)
+        bars = self.market.daily_prices([*ids, *([bench.instrument_id] if bench else [])], start, end)
+        perf = basket_performance(bars[bars["instrument_id"].isin(ids)], start)
         path = perf.path
         benchmark = None
         if bench is not None and not path.empty:
-            bpath = basket_performance(closes[closes["instrument_id"] == bench.instrument_id], start).path
+            bpath = basket_performance(bars[bars["instrument_id"] == bench.instrument_id], start).path
             if not bpath.empty:
                 aligned = bpath.reindex(bpath.index.union(path.index)).ffill().reindex(path.index)
                 benchmark = {"label": bench.symbol, "points": _points(aligned)}
@@ -135,7 +135,7 @@ class ScreenerService:
             "sessions": max(len(path) - 1, 0),
             "total": len(ids),
             "counted": perf.counted,
-            "stocks": records(stocks, ["instrument_id", "close", "change"]),
+            "stocks": records(stocks, ["instrument_id", "entry", "close", "change"]),
             "basket": _points(path),
             "benchmark": benchmark,
         }

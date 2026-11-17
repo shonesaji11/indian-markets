@@ -211,7 +211,7 @@ export interface ScanRunResult {
 
 export interface ScanPerformanceRequest {
   instrument_ids: number[];
-  /** The scan's session (ISO date): the basket is bought at this day's close. */
+  /** The scan's session (ISO date): the basket is bought at the next session's open. */
   start: string;
   /** Last session to measure to (ISO date); default latest stored. */
   end?: string;
@@ -231,7 +231,8 @@ export interface ScanPerformance {
   total: number;
   /** Stocks in the basket average (a close on the start session and a bar after it). */
   counted: number;
-  stocks: { instrument_id: number; close: number | null; change: number | null }[];
+  /** `entry` = open of the first bar after the pick; null (with change) when not counted. */
+  stocks: { instrument_id: number; entry: number | null; close: number | null; change: number | null }[];
   basket: PerformancePoint[];
   benchmark: { label: string; points: PerformancePoint[] } | null;
 }

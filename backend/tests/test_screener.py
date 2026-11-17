@@ -147,8 +147,8 @@ def test_basket_performance_service_and_api(loaded):
 
     expected = {}
     for iid in ids:
-        c = loaded.candles.load(iid, Interval.D1, start=start, end=end)["close"]
-        expected[iid] = c.iloc[-1] / c.iloc[0] - 1
+        c = loaded.candles.load(iid, Interval.D1, start=start, end=end)
+        expected[iid] = c["close"].iloc[-1] / c["open"].iloc[1] - 1  # bought at the open after the pick
     assert out["start"].startswith("2024-06-03") and out["end"].startswith("2024-06-28")
     assert out["total"] == out["counted"] == 2
     assert {s["instrument_id"]: s["change"] for s in out["stocks"]} == pytest.approx(expected)

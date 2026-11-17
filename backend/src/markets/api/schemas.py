@@ -81,7 +81,7 @@ class ScanRunIn(BaseModel):
 
 class ScanPerformanceIn(BaseModel):
     instrument_ids: list[int]
-    start: date  # the scan's session: baskets are bought at this day's close
+    start: date  # the scan's session: baskets are bought at the next session's open
     end: Optional[date] = None  # last session to measure to; default latest stored
 
 

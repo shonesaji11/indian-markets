@@ -533,9 +533,9 @@ class DuckMarketRepository:
         cur.unregister("universe")
         return df
 
-    def daily_closes(self, instrument_ids: Sequence[int], start: datetime, end: datetime) -> pd.DataFrame:
-        """Daily closes per instrument with `start <= ts <= end`, long format (instrument_id, ts, close)."""
-        cols = ["instrument_id", "ts", "close"]
+    def daily_prices(self, instrument_ids: Sequence[int], start: datetime, end: datetime) -> pd.DataFrame:
+        """Daily opens and closes per instrument with `start <= ts <= end`, long format."""
+        cols = ["instrument_id", "ts", "open", "close"]
         if not instrument_ids:
             return pd.DataFrame(columns=cols)
         ids = pd.DataFrame({"instrument_id": pd.Series(list(instrument_ids), dtype="int64")})

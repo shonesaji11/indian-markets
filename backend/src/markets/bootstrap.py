@@ -104,5 +104,6 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
         daily_update=DailyUpdateService(ingestion, watchlist_sync, watchlists, market, breadth),
         overview=MarketOverviewService(market, watchlists, benchmarks),
         breadth=breadth,
-        screener=ScreenerService(registry, market, watchlists, DuckSavedScanRepository(db)),
+        screener=ScreenerService(registry, market, watchlists, DuckSavedScanRepository(db), instruments,
+                                 *benchmarks[:1]),
     )

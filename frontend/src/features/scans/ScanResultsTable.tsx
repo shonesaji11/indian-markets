@@ -30,10 +30,20 @@ interface ScanResultsTableProps {
   onSortChange: (s: SortState) => void;
   /** Shown instead of rows when there are none (defaults to a no-matches message). */
   empty?: string;
+  /** Columns shown right after Change (e.g. performance since the scan date). */
+  afterChange?: Column<ScanRow>[];
 }
 
 /** Matched instruments; clicking a row opens its chart with the rows alongside, in the order shown (Back returns to the scan). */
-export function ScanResultsTable({ rows, extra, list, sort, onSortChange, empty = 'No instruments match these conditions.' }: ScanResultsTableProps) {
+export function ScanResultsTable({
+  rows,
+  extra,
+  list,
+  sort,
+  onSortChange,
+  empty = 'No instruments match these conditions.',
+  afterChange = [],
+}: ScanResultsTableProps) {
   const openChart = useOpenChart();
   const columns = useMemo(() => {
     const shown = new Set(BASE.map((c) => c.key));
@@ -46,8 +56,9 @@ export function ScanResultsTable({ rows, extra, list, sort, onSortChange, empty 
         render: (r) => (c.percent ? signed(num(r, c.key)) : fmt.price(num(r, c.key))),
         align: 'right',
       }));
-    return [...BASE, ...added];
-  }, [extra]);
+    const at = BASE.findIndex((c) => c.key === 'pct_change') + 1;
+    return [...BASE.slice(0, at), ...afterChange, ...BASE.slice(at), ...added];
+  }, [extra, afterChange]);
 
   return (
     <DataTable

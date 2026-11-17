@@ -138,3 +138,32 @@ def test_scans_api_and_saved_scans(loaded):
         assert len(client.get("/api/scans/saved").json()) == 2
         assert client.delete(f"/api/scans/saved/{first['scan_id']}").status_code == 200
         assert client.delete(f"/api/scans/saved/{first['scan_id']}").status_code == 404
+
+
+def test_basket_performance_service_and_api(loaded):
+    ids = [loaded.instruments.find("NSE", s).instrument_id for s in ("RELIANCE-EQ", "TCS-EQ")]
+    start, end = datetime(2024, 6, 3), datetime(2024, 6, 28, 23, 59)
+    out = loaded.screener.performance(ids, start, end)
+
+    expected = {}
+    for iid in ids:
+        c = loaded.candles.load(iid, Interval.D1, start=start, end=end)["close"]
+        expected[iid] = c.iloc[-1] / c.iloc[0] - 1
+    assert out["start"].startswith("2024-06-03") and out["end"].startswith("2024-06-28")
+    assert out["total"] == out["counted"] == 2
+    assert {s["instrument_id"]: s["change"] for s in out["stocks"]} == pytest.approx(expected)
+    assert out["basket"][0]["value"] == 0
+    assert out["basket"][-1]["value"] == pytest.approx(sum(expected.values()) / 2)
+    assert out["benchmark"]["label"] == "Nifty 50"
+    assert [p["ts"] for p in out["benchmark"]["points"]] == [p["ts"] for p in out["basket"]]
+    assert out["sessions"] == len(out["basket"]) - 1
+
+    with pytest.raises(ValueError):
+        loaded.screener.performance(ids, start, datetime(2024, 5, 1))
+    with TestClient(create_app(loaded)) as client:
+        body = {"instrument_ids": ids, "start": "2024-06-03", "end": "2024-06-28"}
+        assert client.post("/api/scans/performance", json=body).json()["counted"] == 2
+        bad = client.post("/api/scans/performance", json={**body, "end": "2024-05-01"})
+        assert bad.status_code == 422
+        none = client.post("/api/scans/performance", json={"instrument_ids": [], "start": "2024-06-03"}).json()
+        assert none["counted"] == 0 and none["basket"] == [] and none["benchmark"] is None

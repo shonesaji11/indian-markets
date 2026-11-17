@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { useSavedScans, useScanRun, useWatchlists } from '@/api/queries';
+import { useSavedScans, useScanPerformance, useScanRun, useWatchlists } from '@/api/queries';
 import type { SavedScan, ScanDefinition } from '@/api/types';
 import { Card, Checkbox, ErrorMessage, Field, PageHeader, Select, TextInput, sortCodec, type SortState } from '@/components/ui';
+import { BasketPerformance, performanceColumns, performanceTitle } from '@/features/scans/BasketPerformance';
 import { FilterBuilder } from '@/features/scans/FilterBuilder';
 import { EMPTY_FILTER, filterCodec, prune } from '@/features/scans/filterTree';
 import { SavedScans } from '@/features/scans/SavedScans';
@@ -18,6 +19,7 @@ export function ScansPage() {
   const [filter, setFilter] = useUrlState('f', EMPTY_FILTER, filterCodec);
   const [universe, setUniverse] = useUrlState('universe', DEFAULT_UNIVERSE);
   const [asOf, setAsOf] = useUrlState('as_of');
+  const [until, setUntil] = useUrlState('until');
   const [includeIndices, setIncludeIndices] = useUrlState('idx', false, boolCodec);
   const [sort, setSort] = useUrlState('sort', DEFAULT_SORT, sortCodec);
   const [savedId] = useUrlState('scan');
@@ -34,6 +36,20 @@ export function ScansPage() {
   );
   const result = useScanRun(request);
   const data = result.data;
+
+  // A scan on a past day: how its results did from that day's close up to Until (default latest).
+  const untilError = asOf && until && until < asOf ? 'Until must be after the As of date.' : null;
+  const perfRequest = useMemo(
+    () =>
+      asOf && !untilError && data?.as_of && data.rows.length && !result.isPlaceholderData
+        ? { instrument_ids: data.rows.map((r) => r.instrument_id), start: data.as_of.slice(0, 10), end: until || undefined }
+        : undefined,
+    [asOf, until, untilError, data, result.isPlaceholderData],
+  );
+  const perf = useScanPerformance(perfRequest);
+  const perfTitle = perf.data ? performanceTitle(perf.data, Boolean(until)) : '';
+  const perfColumns = useMemo(() => performanceColumns(perf.data, perfTitle), [perf.data, perfTitle]);
+  const showPerf = perfRequest !== undefined && (perf.isLoading || perf.error || (perf.data?.sessions ?? 0) > 0);
 
   const { data: watchlists = [] } = useWatchlists();
   const universeOptions = [
@@ -75,6 +91,12 @@ export function ScansPage() {
             <Field label="As of">
               <TextInput type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
             </Field>
+            {asOf && (
+              <Field label="Until">
+                <TextInput type="date" value={until} min={asOf} onChange={(e) => setUntil(e.target.value)} />
+                {untilError && <span className="scan-perf__error">{untilError}</span>}
+              </Field>
+            )}
             <Field label="Indices">
               <Checkbox checked={includeIndices} onChange={setIncludeIndices}>
                 Include
@@ -89,6 +111,10 @@ export function ScansPage() {
           <SavedScans current={savedId} definition={definition} onLoad={load} />
         </div>
       </Card>
+
+      {showPerf && (
+        <BasketPerformance perf={perf.data} loading={perf.isLoading} error={perf.error} title={perfTitle} />
+      )}
 
       <Card
         title="Results"
@@ -110,6 +136,7 @@ export function ScansPage() {
           sort={sort}
           onSortChange={setSort}
           empty={result.isLoading ? 'Running…' : undefined}
+          afterChange={perfColumns}
         />
       </Card>
     </div>

@@ -79,6 +79,12 @@ class ScanRunIn(BaseModel):
     columns: list[dict[str, Any]] = Field(default_factory=list)  # extra operands to return, not filter on
 
 
+class ScanPerformanceIn(BaseModel):
+    instrument_ids: list[int]
+    start: date  # the scan's session: baskets are bought at this day's close
+    end: Optional[date] = None  # last session to measure to; default latest stored
+
+
 class SavedScanIn(BaseModel):
     name: str
     definition: dict[str, Any]  # {"filter": ..., "universe": ..., "include_indices": ...}

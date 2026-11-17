@@ -1,6 +1,5 @@
 import {
   CandlestickSeries,
-  ColorType,
   HistogramSeries,
   LineSeries,
   createChart,
@@ -15,6 +14,7 @@ import { useThemeVersion } from '@/hooks/useTheme';
 import { cssVar } from '@/lib/format';
 import { toChartTime } from '@/lib/time';
 import { ChartLegend, type LegendItem } from './ChartLegend';
+import { applyChartTheme, baseLayout } from './theme';
 import { RangesPrimitive, type MeasuredRange, type RangeKind } from './ranges';
 
 export interface OhlcPoint {
@@ -96,13 +96,10 @@ export function PriceChart({
     if (!el) return;
     const chart = createChart(el, {
       autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
-        fontSize: 11,
-        fontFamily: cssVar('--font'),
-        attributionLogo: !compact,
-      },
+      layout: baseLayout(!compact),
       crosshair: { mode: 0 },
+      // Empty space after the last bar, as on TradingView; also kept by a time-axis double-click.
+      timeScale: { rightOffset: 10 },
       ...(compact && {
         handleScroll: false,
         handleScale: false,
@@ -134,14 +131,7 @@ export function PriceChart({
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
-    const grid = cssVar('--grid');
-    const axis = cssVar('--axis');
-    chart.applyOptions({
-      layout: { textColor: cssVar('--text-muted') },
-      grid: { vertLines: { color: grid }, horzLines: { color: grid } },
-      rightPriceScale: { borderColor: axis },
-      timeScale: { borderColor: axis },
-    });
+    applyChartTheme(chart);
     const up = cssVar('--up');
     const down = cssVar('--down');
     candleRef.current?.applyOptions({ upColor: up, downColor: down, wickUpColor: up, wickDownColor: down });
@@ -155,8 +145,12 @@ export function PriceChart({
   useEffect(() => {
     candleRef.current?.setData(candles);
     rangesRef.current?.setTimes(candles.map((c) => c.time));
-    chartRef.current?.timeScale().fitContent();
-  }, [candles]);
+    // Miniatures show all their bars; the full chart opens at the default zoom on the latest bars, as a
+    // double-click on the time axis does (fitting years of daily bars squeezes candles to slivers).
+    const scale = chartRef.current?.timeScale();
+    if (compact) scale?.fitContent();
+    else scale?.resetTimeScale();
+  }, [candles, compact]);
 
   useEffect(() => {
     rangesRef.current?.setRanges(ranges);

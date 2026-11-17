@@ -209,6 +209,33 @@ export interface ScanRunResult {
   rows: ScanRow[];
 }
 
+export interface ScanPerformanceRequest {
+  instrument_ids: number[];
+  /** The scan's session (ISO date): the basket is bought at this day's close. */
+  start: string;
+  /** Last session to measure to (ISO date); default latest stored. */
+  end?: string;
+}
+
+export interface PerformancePoint {
+  ts: string;
+  /** Change since the start close, as a fraction. */
+  value: number | null;
+}
+
+export interface ScanPerformance {
+  start: string | null;
+  end: string | null;
+  /** Sessions after the start. */
+  sessions: number;
+  total: number;
+  /** Stocks in the basket average (a close on the start session and a bar after it). */
+  counted: number;
+  stocks: { instrument_id: number; close: number | null; change: number | null }[];
+  basket: PerformancePoint[];
+  benchmark: { label: string; points: PerformancePoint[] } | null;
+}
+
 export interface SavedScan {
   scan_id: string;
   name: string;

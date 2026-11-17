@@ -23,6 +23,8 @@ import type {
   SavedScan,
   ScanDefinition,
   ScanField,
+  ScanPerformance,
+  ScanPerformanceRequest,
   ScanRequest,
   ScanRunResult,
   SectorBreadth,
@@ -40,6 +42,7 @@ export const keys = {
   ingestRuns: ['ingest-runs'] as const,
   scanFields: ['scan-fields'] as const,
   scanRun: (req: ScanRequest) => ['scan-run', req] as const,
+  scanPerformance: (req: ScanPerformanceRequest | undefined) => ['scan-performance', req] as const,
   savedScans: ['saved-scans'] as const,
 };
 
@@ -172,6 +175,15 @@ export function useScanRun(req: ScanRequest) {
     queryKey: keys.scanRun(req),
     queryFn: () => http.post<ScanRunResult>('/scans/run', req),
     placeholderData: keepPreviousData,
+  });
+}
+
+/** Equal-weight performance of a basket since its scan date; idle while `req` is undefined. */
+export function useScanPerformance(req: ScanPerformanceRequest | undefined) {
+  return useQuery({
+    queryKey: keys.scanPerformance(req),
+    queryFn: () => http.post<ScanPerformance>('/scans/performance', req),
+    enabled: req !== undefined,
   });
 }
 

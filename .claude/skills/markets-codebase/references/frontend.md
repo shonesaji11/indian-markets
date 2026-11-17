@@ -12,7 +12,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `pages/OverviewPage.tsx` | Market overview: BenchmarkTiles, BreadthCard, SectorCard, SectorBreadthCard (row → SectorPage), ScanCards. URL: `universe`, `as_of`, `ma` (MA periods), `min` (min stocks) |
 | `pages/SectorPage.tsx` | One sector's stocks (SectorStocksPanel), "All sectors" back to Overview. URL: `name`, `universe`, `as_of`, `ma`, `view` (table/charts), `page`, `sort` |
 | `pages/ChartPage.tsx` | Full-width toolbar (InstrumentPicker, interval, indicator chips, IndicatorPicker) → window-height PriceChart with calc series and price/date range buttons in the card header (ranges are unsaved page state, cleared on stock/interval change and by Esc), plus RelatedList beside it when opened from a list. URL: `instrument`, `interval`, `ind`, `list` (id of a stored ChartList) |
-| `pages/ScansPage.tsx` | Custom scans: FilterBuilder + SavedScans + ScanResultsTable (`useScanRun`, debounced, half-filled conditions pruned). URL: `f` (filter JSON), `universe`, `as_of`, `idx`, `sort`, `scan` (loaded saved id) |
+| `pages/ScansPage.tsx` | Custom scans: FilterBuilder + SavedScans + ScanResultsTable (`useScanRun`, debounced, half-filled conditions pruned). URL: `f` (filter JSON), `universe`, `as_of`, `until`, `idx`, `sort`, `scan` (loaded saved id). With a past `as_of`, BasketPerformance card + since columns (`until` = window end, default latest) |
 | `pages/DataPage.tsx` | IngestPanel, CoverageTable, IngestRunsTable |
 
 ## Data layer (`api/`)
@@ -41,6 +41,8 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `components/charts/PriceChart.tsx` | `PriceChart({candles, volume, series, height (px or CSS), showTime, compact, ranges, rangeTool, onRangeAdd})` (`rangeTool` set = two clicks measure a range, handed to `onRangeAdd`; own pointer click detection because the chart's click event drops a 2nd click within 500 ms) (`compact` = static miniature: candles only, no axes / last-price marker / logo; caller must credit TradingView once), `toOhlc(candles)`, `OhlcPoint`, `ValuePoint`, `ChartSeries` (multi-pane lines/histograms; `group` joins an indicator's outputs into one legend row). Non-compact charts show `ChartLegend` top-left; series have no axis title tags |
 | `components/charts/ranges.ts` | `RangeKind` ('price' | 'date'), `MeasuredRange`, `RangesPrimitive` (lightweight-charts series primitive drawing range boxes + labels, `pointAt(x, y)` snaps to a bar), `rangeLabel`, `barIndex` |
 | `components/charts/ChartLegend.tsx` | `ChartLegend({items})`, `LegendItem`: collapsible indicator legend over the chart's top-left (name + values at the crosshair, latest bar otherwise); open state remembered via `markets.chart.legendOpen` |
+| `components/charts/LineChart.tsx` | `LineChart({lines, height, format})`, `LineSpec`: static multi-line time chart (fits all points), e.g. return paths |
+| `components/charts/theme.ts` | `baseLayout(attributionLogo)`, `applyChartTheme(chart)`: shared lightweight-charts layout + token colours for every chart |
 
 ## Features (`features/<area>/`)
 
@@ -55,7 +57,8 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `scans/filterTree.ts` | `EMPTY_FILTER`, `OP_OPTIONS`, `newCondition`, `newGroup`, `prune`, `operandValue`/`operandFromValue`/`operandOptions` (select encoding `f:close`, `i:macd:signal`), `filterCodec` |
 | `scans/FilterBuilder.tsx` | `FilterBuilder({value, onChange})`: recursive group editor (all/any, max depth 3), condition rows with operand + params, value or operand on the right |
 | `scans/SavedScans.tsx` | `SavedScans({current, definition, onLoad})`: load / save (upsert by name) / delete |
-| `scans/ScanResultsTable.tsx` | `ScanResultsTable({rows, extra, list, sort, onSortChange, empty})`: base columns + one per operand used; row → chart with the rows (in shown order) as the side list named by `list` |
+| `scans/BasketPerformance.tsx` | `BasketPerformance({perf, loading, error, title})` card (basket, benchmark, difference, up/down, LineChart), `performanceColumns(perf, title)` (close at end + change since start), `performanceTitle`; data via `useScanPerformance` |
+| `scans/ScanResultsTable.tsx` | `ScanResultsTable({rows, extra, list, sort, onSortChange, empty, afterChange})` (`afterChange` columns go right after Change): base columns + one per operand used; row → chart with the rows (in shown order) as the side list named by `list` |
 | `overview/BenchmarkTiles.tsx`, `BreadthCard.tsx`, `ScanCard.tsx`, `SectorCard.tsx` | Overview page cards; `ScanCard`'s `onSelect(row, shown)` passes its rows in displayed order (OverviewPage turns each card into a chart list) |
 | `overview/SectorBreadthCard.tsx` | Sectors ranked by % above each MA (Meter bars), MA inputs, Min stocks filter; row click → `onSelect` |
 | `sectors/sectorLinks.ts` | `sectorHref(industry, ctx)`, `overviewHref(ctx)` (carry universe / as_of / MAs), `DEFAULT_MAS`, `DEFAULT_SECTOR_SORT`, `DEFAULT_UNIVERSE`, `STOCK_UNIVERSES` (watchlists offered in the Overview and Scans universe dropdowns: nifty50, nifty500, niftytotalmarket, nse_traded) |

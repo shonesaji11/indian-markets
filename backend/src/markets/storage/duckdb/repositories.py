@@ -533,6 +533,25 @@ class DuckMarketRepository:
         cur.unregister("universe")
         return df
 
+    def daily_closes(self, instrument_ids: Sequence[int], start: datetime, end: datetime) -> pd.DataFrame:
+        """Daily closes per instrument with `start <= ts <= end`, long format (instrument_id, ts, close)."""
+        cols = ["instrument_id", "ts", "close"]
+        if not instrument_ids:
+            return pd.DataFrame(columns=cols)
+        ids = pd.DataFrame({"instrument_id": pd.Series(list(instrument_ids), dtype="int64")})
+        cur = self._db.cursor()
+        cur.register("universe", ids)
+        df = cur.execute(
+            f"""
+            SELECT {', '.join(cols)} FROM candles c JOIN universe u USING (instrument_id)
+            WHERE c.timeframe = '1d' AND c.ts BETWEEN ? AND ?
+            ORDER BY instrument_id, ts
+            """,
+            [start, end],
+        ).df()
+        cur.unregister("universe")
+        return df
+
     def tracked_daily_ids(self) -> list[int]:
         """Instruments that already have daily candles stored."""
         return [r[0] for r in self._db.cursor().execute(

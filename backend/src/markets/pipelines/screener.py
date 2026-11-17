@@ -5,6 +5,7 @@ from typing import Any, Optional, Sequence
 
 import pandas as pd
 
+from markets.engine.performance import basket_performance
 from markets.engine.registry import IndicatorRegistry
 from markets.engine.screener import (
     FIELDS,
@@ -21,6 +22,7 @@ from markets.engine.screener import (
 from markets.pipelines.market_overview import ROW_COLUMNS
 from markets.pipelines.snapshots import latest_session, records, universe_members
 from markets.storage.duckdb.repositories import (
+    DuckInstrumentRepository,
     DuckMarketRepository,
     DuckSavedScanRepository,
     DuckWatchlistRepository,
@@ -32,11 +34,14 @@ class ScreenerService:
     """Runs custom scans (engine/screener.py filter trees) over a universe, and stores saved ones."""
 
     def __init__(self, registry: IndicatorRegistry, market: DuckMarketRepository,
-                 watchlists: DuckWatchlistRepository, saved: DuckSavedScanRepository):
+                 watchlists: DuckWatchlistRepository, saved: DuckSavedScanRepository,
+                 instruments: DuckInstrumentRepository, benchmark: str = "NSE:Nifty 50"):
         self.registry = registry
         self.market = market
         self.watchlists = watchlists
         self.saved = saved
+        self.instruments = instruments
+        self.benchmark = benchmark  # "EXCHANGE:SYMBOL" that baskets are compared with
 
     def fields(self) -> list[dict[str, Any]]:
         return [{"name": f.name, "label": f.label, "percent": f.percent} for f in FIELDS.values()]
@@ -105,6 +110,36 @@ class ScreenerService:
             values.update({k: (nan, nan) for k in indicators})
         return values
 
+    def performance(self, instrument_ids: Sequence[int], start: datetime,
+                    end: Optional[datetime] = None) -> dict[str, Any]:
+        """Equal-weight buy-and-hold of `instrument_ids` from their close on `start`'s session up to
+        `end` (default: latest stored), with the benchmark over the same sessions."""
+        end = end or datetime.now()
+        if end < start:
+            raise ValueError("the Until date must be on or after the As of date")
+        ids = list(dict.fromkeys(instrument_ids))
+        bench = self.instruments.find(*self.benchmark.split(":", 1))
+        closes = self.market.daily_closes([*ids, *([bench.instrument_id] if bench else [])], start, end)
+        perf = basket_performance(closes[closes["instrument_id"].isin(ids)], start)
+        path = perf.path
+        benchmark = None
+        if bench is not None and not path.empty:
+            bpath = basket_performance(closes[closes["instrument_id"] == bench.instrument_id], start).path
+            if not bpath.empty:
+                aligned = bpath.reindex(bpath.index.union(path.index)).ffill().reindex(path.index)
+                benchmark = {"label": bench.symbol, "points": _points(aligned)}
+        stocks = perf.stocks.reset_index()
+        return {
+            "start": path.index[0].isoformat() if not path.empty else None,
+            "end": path.index[-1].isoformat() if not path.empty else None,
+            "sessions": max(len(path) - 1, 0),
+            "total": len(ids),
+            "counted": perf.counted,
+            "stocks": records(stocks, ["instrument_id", "close", "change"]),
+            "basket": _points(path),
+            "benchmark": benchmark,
+        }
+
     @staticmethod
     def _column(key: str, op: dict[str, Any]) -> dict[str, Any]:
         field = FIELDS.get(op.get("field", "")) if op["type"] == "field" else None
@@ -123,3 +158,7 @@ class ScreenerService:
 
     def delete(self, scan_id: str) -> bool:
         return self.saved.delete(scan_id)
+
+
+def _points(path: pd.Series) -> list[dict[str, Any]]:
+    return [{"ts": ts.isoformat(), "value": None if pd.isna(v) else float(v)} for ts, v in path.items()]

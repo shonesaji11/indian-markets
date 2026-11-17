@@ -20,6 +20,11 @@
   - Plain functions for stateless computation: indicators are `@indicator`-registered functions over a candle DataFrame (`engine/indicators/`), which makes them usable on the chart and in custom scans automatically; built-in Overview scans go in `engine/scans.py`; custom-scan filter logic is in `engine/screener.py`. Don't wrap pure functions in classes.
   - Frontend: generic UI in `components/ui` / `components/charts` (exported via `index.ts`), feature-specific pieces in `features/<area>/`, data access via `api/queries.ts`, shared logic in `hooks/` and `lib/`.
 
+## Testing new calculations and features
+- Whenever a new calculation (indicator, scan, SQL column/macro, breadth or screener logic) or feature is added or changed, add tests for it: reference values for correctness, plus the data-quality edge cases (short history, gaps, zero/NaN price or volume, flat prices, unsorted/duplicate bars, stale instruments).
+- Then run the full backend test suite (`pytest` in `backend/`), not just the new tests, and fix every failure before calling the work done.
+- If a failure or an edge case has no obvious right answer, don't pick one silently. Explain the issue and its context, lay out a few possible solutions with their trade-offs and your recommendation, then wait for my decision and implement what I choose.
+
 ## Before every commit: secret checks
 - Review the file list (`git status --short`): no `.env`, `ngrok-policy.yml`, logs, `*.duckdb`, or other local/secret files staged. New secret files get a `.gitignore` entry first.
 - Scan the staged diff (`git diff --cached`) for credentials: API keys, passwords, PINs, TOTP secrets, tokens (`Bearer`, `eyJ...` JWTs), `authtoken`, IPs/MAC addresses, real account or client codes. Example files must hold placeholders only.

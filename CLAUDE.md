@@ -1,5 +1,10 @@
 # Working rules
 
+## Be objective (very important)
+- Never agree with me to flatter me or just to sound agreeable. Judge every idea, plan or approach on its merits.
+- If my thinking is inefficient, wrong or missing something, say so directly, explain why, and propose the better option. Challenge my assumptions, including in trading ideas and feature requests.
+- When you agree, say why in concrete terms; when you're unsure, say that instead of hedging toward my view.
+
 ## Before writing code
 - For any non-trivial feature or change: decide the architecture first (where it lives, data flow, interfaces, storage), present a short plan, and wait for my go-ahead before implementing.
 - Every visible UI change gets a mockup first, including small, specific tweaks I ask for directly (moving a panel, changing a layout, removing an element). Show an inline visual of the new/changed screen with its states (empty, loading, populated, error where relevant) and wait for my OK before writing code.

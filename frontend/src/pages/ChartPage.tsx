@@ -1,7 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useCalcSeriesList, useCandles, useIngest } from '@/api/queries';
 import { INTERVALS, type Interval } from '@/api/types';
-import { PriceChart, toOhlc, type ChartSeries, type ValuePoint } from '@/components/charts';
+import {
+  PriceChart,
+  toOhlc,
+  type ChartSeries,
+  type MeasuredRange,
+  type RangeKind,
+  type ValuePoint,
+} from '@/components/charts';
 import { Button, Card, Chip, Delta, EmptyState, ErrorMessage, Field, Select, SwatchPicker } from '@/components/ui';
 import {
   addIndicator,
@@ -58,6 +65,24 @@ export function ChartPage() {
     saveSetting(LIST_OPEN_KEY, open ? null : '0');
     setListOpenState(open);
   };
+  // Price/date ranges measured on the chart; not saved, cleared on a new stock or interval and by Esc.
+  const [rangeTool, setRangeTool] = useState<RangeKind | null>(null);
+  const [ranges, setRanges] = useState<MeasuredRange[]>([]);
+  useEffect(() => {
+    setRangeTool(null);
+    setRanges([]);
+  }, [instrumentId, interval]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && e.target.closest('input, textarea, select');
+      if (e.key !== 'Escape' || e.defaultPrevented || typing) return; // PriceChart cancels an unfinished range first
+      setRangeTool(null);
+      setRanges([]);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  const toggleTool = (kind: RangeKind) => setRangeTool((t) => (t === kind ? null : kind));
   const candles = useCandles(instrumentId, interval);
   const calcs = useCalcSeriesList(instrumentId, interval, indicators);
   const ingest = useIngest();
@@ -157,18 +182,45 @@ export function ChartPage() {
           }
           actions={
             instrument && (
-              <Button
-                size="sm"
-                loading={ingest.isPending}
-                onClick={() =>
-                  ingest.mutate({
-                    instrument_ids: [instrument.instrument_id],
-                    interval,
-                  })
-                }
-              >
-                Fetch latest
-              </Button>
+              <>
+                {ohlc.length > 0 && (
+                  <>
+                    <Button
+                      size="sm"
+                      icon
+                      aria-pressed={rangeTool === 'price'}
+                      title="Price range: click two points"
+                      onClick={() => toggleTool('price')}
+                    >
+                      ↕
+                    </Button>
+                    <Button
+                      size="sm"
+                      icon
+                      aria-pressed={rangeTool === 'date'}
+                      title="Date range: click two points"
+                      onClick={() => toggleTool('date')}
+                    >
+                      ↔
+                    </Button>
+                    <Button size="sm" icon title="Clear ranges (Esc)" onClick={() => setRanges([])}>
+                      ✕
+                    </Button>
+                  </>
+                )}
+                <Button
+                  size="sm"
+                  loading={ingest.isPending}
+                  onClick={() =>
+                    ingest.mutate({
+                      instrument_ids: [instrument.instrument_id],
+                      interval,
+                    })
+                  }
+                >
+                  Fetch latest
+                </Button>
+              </>
             )
           }
           divided
@@ -189,6 +241,12 @@ export function ChartPage() {
                 series={series}
                 height={CHART_HEIGHT}
                 showTime={interval !== '1d'}
+                ranges={ranges}
+                rangeTool={rangeTool}
+                onRangeAdd={(r) => {
+                  setRanges((rs) => [...rs, r]);
+                  setRangeTool(null);
+                }}
               />
             </div>
           )}

@@ -36,6 +36,7 @@ export function toChartSeries(calc: CalcSeries, slot: number, pane: number, colo
       color: colorOf(((slot - 1 + i) % SERIES_SLOTS) + 1),
       pane,
       label: i === 0 ? `${calc.name}(${paramsLabel(calc.params)})` : output,
+      group: String(calc.calc_id),
     } satisfies ChartSeries;
   });
 }

@@ -96,6 +96,14 @@
   width: var(--control-h);
   padding: 0;
 }
+.ui-button--sm.ui-button--icon {
+  width: 26px;
+}
+.ui-button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .ui-spinner {
   width: 12px;
   height: 12px;

@@ -11,7 +11,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `components/layout/AppShell.tsx` | `AppShell({title, nav, children})`, `NavItem` |
 | `pages/OverviewPage.tsx` | Market overview: BenchmarkTiles, BreadthCard, SectorCard, SectorBreadthCard (row → SectorPage), ScanCards. URL: `universe`, `as_of`, `ma` (MA periods), `min` (min stocks) |
 | `pages/SectorPage.tsx` | One sector's stocks (SectorStocksPanel), "All sectors" back to Overview. URL: `name`, `universe`, `as_of`, `ma`, `view` (table/charts), `page`, `sort` |
-| `pages/ChartPage.tsx` | Full-width toolbar (InstrumentPicker, interval, indicator chips, IndicatorPicker) → window-height PriceChart with calc series, plus RelatedList beside it when opened from a list. URL: `instrument`, `interval`, `ind`, `list` (id of a stored ChartList) |
+| `pages/ChartPage.tsx` | Full-width toolbar (InstrumentPicker, interval, indicator chips, IndicatorPicker) → window-height PriceChart with calc series and price/date range buttons in the card header (ranges are unsaved page state, cleared on stock/interval change and by Esc), plus RelatedList beside it when opened from a list. URL: `instrument`, `interval`, `ind`, `list` (id of a stored ChartList) |
 | `pages/ScansPage.tsx` | Custom scans: FilterBuilder + SavedScans + ScanResultsTable (`useScanRun`, debounced, half-filled conditions pruned). URL: `f` (filter JSON), `universe`, `as_of`, `idx`, `sort`, `scan` (loaded saved id) |
 | `pages/DataPage.tsx` | IngestPanel, CoverageTable, IngestRunsTable |
 
@@ -38,7 +38,9 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `components/ui/PageHeader.tsx` | `PageHeader` |
 | `components/ui/Sparkline.tsx` | `Sparkline`, `SparkPoint` |
 | `components/ui/StatTile.tsx` | `StatTile` (label, value, delta, note) |
-| `components/charts/PriceChart.tsx` | `PriceChart({candles, volume, series, height (px or CSS), showTime, compact})` (`compact` = static miniature: candles only, no axes / last-price marker / logo; caller must credit TradingView once), `toOhlc(candles)`, `OhlcPoint`, `ValuePoint`, `ChartSeries` (multi-pane lines/histograms) |
+| `components/charts/PriceChart.tsx` | `PriceChart({candles, volume, series, height (px or CSS), showTime, compact, ranges, rangeTool, onRangeAdd})` (`rangeTool` set = two clicks measure a range, handed to `onRangeAdd`; own pointer click detection because the chart's click event drops a 2nd click within 500 ms) (`compact` = static miniature: candles only, no axes / last-price marker / logo; caller must credit TradingView once), `toOhlc(candles)`, `OhlcPoint`, `ValuePoint`, `ChartSeries` (multi-pane lines/histograms; `group` joins an indicator's outputs into one legend row). Non-compact charts show `ChartLegend` top-left; series have no axis title tags |
+| `components/charts/ranges.ts` | `RangeKind` ('price' | 'date'), `MeasuredRange`, `RangesPrimitive` (lightweight-charts series primitive drawing range boxes + labels, `pointAt(x, y)` snaps to a bar), `rangeLabel`, `barIndex` |
+| `components/charts/ChartLegend.tsx` | `ChartLegend({items})`, `LegendItem`: collapsible indicator legend over the chart's top-left (name + values at the crosshair, latest bar otherwise); open state remembered via `markets.chart.legendOpen` |
 
 ## Features (`features/<area>/`)
 

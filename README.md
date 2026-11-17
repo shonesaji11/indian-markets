@@ -55,6 +55,18 @@ Rules that keep results reproducible:
 
 Timestamps are naive IST everywhere.
 
+## Quick start
+
+Double-click `start-dashboard.bat` in the project folder (after the setup below). It opens the
+backend, the frontend and, if `ngrok-policy.yml` exists, a public ngrok link, each in its own
+window, then opens http://localhost:5173. Close the windows to stop. Anything already running is
+skipped. The server runs without `--reload`, so it can't restart in the middle of the nightly update.
+
+Public link: copy `ngrok-policy.example.yml` to `ngrok-policy.yml` (gitignored) and set a password.
+Visitors must log in with it; without that file no public link is opened. The link is the
+account's fixed ngrok dev domain, shown in the "Markets ngrok" window. The ngrok.exe path is set at
+the top of the .bat file.
+
 ## Setup
 
 Backend (Python 3.9+):

@@ -20,6 +20,11 @@
   - Plain functions for stateless computation: indicators are `@indicator`-registered functions over a candle DataFrame (`engine/indicators/`), which makes them usable on the chart and in custom scans automatically; built-in Overview scans go in `engine/scans.py`; custom-scan filter logic is in `engine/screener.py`. Don't wrap pure functions in classes.
   - Frontend: generic UI in `components/ui` / `components/charts` (exported via `index.ts`), feature-specific pieces in `features/<area>/`, data access via `api/queries.ts`, shared logic in `hooks/` and `lib/`.
 
+## Before every commit: secret checks
+- Review the file list (`git status --short`): no `.env`, `ngrok-policy.yml`, logs, `*.duckdb`, or other local/secret files staged. New secret files get a `.gitignore` entry first.
+- Scan the staged diff (`git diff --cached`) for credentials: API keys, passwords, PINs, TOTP secrets, tokens (`Bearer`, `eyJ...` JWTs), `authtoken`, IPs/MAC addresses, real account or client codes. Example files must hold placeholders only.
+- If anything turns up, unstage it, move the value to a gitignored file, and tell me before committing.
+
 ## Project context
 - Backend: `backend/src/markets` (FastAPI + DuckDB). Frontend: React in `frontend/`.
 - Before planning or changing code, use the `markets-codebase` skill (`.claude/skills/markets-codebase/`) to find the exact files and symbols, then read only those ranges instead of whole files.

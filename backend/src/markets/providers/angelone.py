@@ -13,6 +13,7 @@ Docs: https://smartapi.angelone.in/docs
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import datetime, timedelta
 from typing import Iterator, Optional
@@ -25,6 +26,21 @@ from markets.providers import ProviderError
 from markets.providers.ratelimit import RateLimiter
 
 log = logging.getLogger(__name__)
+
+# The SDK logs (via logzero) full request headers and params when a request fails:
+# Bearer token, API key, PIN, TOTP. Mask those values before any handler writes them.
+_SECRETS = re.compile(
+    r"""(['"](?:Authorization|X-PrivateKey|X-ClientPublicIP|X-MACAddress|password|totp|"""
+    r"""jwtToken|refreshToken|feedToken)['"]\s*:\s*)(['"])[^'"]*\2""", re.I)
+
+
+class _RedactSecrets(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg, record.args = _SECRETS.sub(r"\1\2***\2", record.getMessage()), None
+        return True
+
+
+logging.getLogger("logzero_default").addFilter(_RedactSecrets())
 
 SCRIP_MASTER_URL = "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json"
 

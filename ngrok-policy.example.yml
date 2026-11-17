@@ -1,0 +1,9 @@
+# Copy to ngrok-policy.yml (gitignored) and replace the password (8-128 characters).
+# start-dashboard.bat only opens the public ngrok link when ngrok-policy.yml exists,
+# so the dashboard is never exposed without this login prompt.
+on_http_request:
+  - actions:
+      - type: basic-auth
+        config:
+          credentials:
+            - "markets:CHANGE-ME-to-a-long-password"

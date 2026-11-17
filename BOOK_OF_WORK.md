@@ -11,6 +11,8 @@ Format: **title** (area, date added): the problem, options considered, current b
 
 ## Known limitations
 
+- **Public link serves the Vite dev server** (launcher, 2026-11-17): the ngrok tunnel points at `npm run dev`, so remote loads are unbundled and slower, and the only protection is ngrok basic auth (one shared password; the app itself has no login). Options: serve the built `frontend/dist` from FastAPI on one port; ngrok Google login instead of a password. Current behaviour: works, protected by `ngrok-policy.yml`.
+
 - **Stored breadth can lag ad-hoc fetches** (sector breadth, 2026-11-17): a day's breadth is stored on first read; bars fetched later that same day via the Data page or "Fetch latest" aren't reflected until the nightly update recomputes the last 10 days. Fix if it matters: recompute breadth after any ingest.
 - **Sector labels are not point-in-time** (data, 2026-11-17): `instrument_tags.industry` holds only the latest NSE classification, so past sector breadth uses today's labels. Fix: keep tag history like `watchlist_members` does.
 - **Scans run on daily bars only** (scans, 2026-11-17): `engine/screener.TIMEFRAME = "1d"`. Intraday scans would need intraday fields (no `daily_signals` equivalent) and per-interval bar loading.

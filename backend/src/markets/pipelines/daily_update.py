@@ -25,6 +25,7 @@ class DailyUpdateReport:
     targets: int = 0
     ok: int = 0
     failed: int = 0
+    retried: int = 0
     bars_written: int = 0
     breadth_rows: int = 0
     errors: list[str] = field(default_factory=list)
@@ -38,12 +39,15 @@ class DailyUpdateService:
 
     Tracked = current members of every watchlist + anything that already has daily candles.
     New instruments get their full default history; existing ones only the missing days.
+    Failures (usually Angel's rate limit) get one more try after `retry_delay` seconds, once the
+    provider's per-minute window has cleared.
     """
 
     def __init__(self, ingestion: IngestionService, watchlist_sync: WatchlistService,
                  watchlists: DuckWatchlistRepository, market: DuckMarketRepository,
-                 breadth: Optional[BreadthService] = None):
+                 breadth: Optional[BreadthService] = None, retry_delay: float = 60.0):
         self.ingestion = ingestion
+        self.retry_delay = retry_delay
         self.breadth = breadth
         self.watchlist_sync = watchlist_sync
         self.watchlists = watchlists
@@ -80,16 +84,21 @@ class DailyUpdateService:
         report.targets = len(targets)
 
         t0 = time.monotonic()
+        failures = {}
         for n, instrument_id in enumerate(sorted(targets), start=1):
-            result = self.ingestion.ingest(instrument_id, Interval.D1)
-            if result.status == "ok":
-                report.ok += 1
-                report.bars_written += result.rows
-            else:
-                report.failed += 1
-                report.errors.append(f"instrument {instrument_id}: {result.error}")
+            self._ingest(instrument_id, report, failures)
             if n % 50 == 0:
                 log.info("daily update: %d/%d instruments (%.0fs)", n, len(targets), time.monotonic() - t0)
+
+        if failures:
+            report.retried = len(failures)
+            log.info("daily update: retrying %d failed instruments in %.0fs", len(failures), self.retry_delay)
+            time.sleep(self.retry_delay)
+            for instrument_id in list(failures):
+                del failures[instrument_id]
+                self._ingest(instrument_id, report, failures)
+        report.failed = len(failures)
+        report.errors.extend(f"instrument {i}: {e}" for i, e in failures.items())
 
         if self.breadth is not None:
             try:
@@ -99,5 +108,14 @@ class DailyUpdateService:
                 log.exception("sector breadth update failed")
 
         report.finished_at = datetime.now()
-        log.info("daily update done: %d ok, %d failed, %d bars", report.ok, report.failed, report.bars_written)
+        log.info("daily update done: %d ok, %d failed (%d retried), %d bars",
+                 report.ok, report.failed, report.retried, report.bars_written)
         return report
+
+    def _ingest(self, instrument_id: int, report: DailyUpdateReport, failures: dict) -> None:
+        result = self.ingestion.ingest(instrument_id, Interval.D1)
+        if result.status == "ok":
+            report.ok += 1
+            report.bars_written += result.rows
+        else:
+            failures[instrument_id] = result.error

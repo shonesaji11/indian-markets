@@ -145,7 +145,8 @@ def main(argv: Optional[list[str]] = None) -> None:
 
 def _print_report(r: dict) -> None:
     took = (r["finished_at"] - r["started_at"]) if not isinstance(r["finished_at"], str) else None
-    print(f"daily update: {r['ok']}/{r['targets']} instruments ok, {r['failed']} failed, "
+    print(f"daily update: {r['ok']}/{r['targets']} instruments ok, {r['failed']} failed "
+          f"({r.get('retried', 0)} retried), "
           f"{r['bars_written']} bars written, {r.get('breadth_rows', 0)} sector breadth rows"
           + (f" in {took}" if took else ""))
     for w in r["watchlists"]:

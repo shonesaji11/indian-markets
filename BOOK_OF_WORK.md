@@ -22,9 +22,10 @@ Format: **title** (area, date added): the problem, options considered, current b
 
 ## Bugs
 
-- **Flaky `test_watchlist_membership_keeps_history`** (tests, 2026-11-17): compares Python `datetime.now()` with DuckDB `now()`; Windows' coarse clock occasionally orders them wrongly. Fix: take the timestamp from DuckDB, or sleep briefly before `before_change`.
 
 ## Ideas (later)
 
+- **F&O stocks universe** (scans/overview, 2026-11-18): flag F&O stocks and offer "F&O stocks" in the universe dropdown on Overview and Scans. Sketch: an `fno` watchlist synced nightly from the stored scrip master (underlyings of live NFO `FUTSTK` contracts, mapped to NSE `-EQ`), so membership history and nightly price fetching come for free. Caveats: no history before the first sync (NSE publishes past changes), excluded stocks linger until their last contract expires (up to ~3 months), name mismatches skipped and logged.
+- **Open-interest signals for F&O stocks** (scans, 2026-11-18): use futures OI (long/short build-up, OI change vs price change, PCR) as scan signals on the F&O universe. Angel's OI build-up and PCR APIs cover today only, so history has to be collected nightly from now on (or daily futures candles, which carry OI); nothing can be backfilled from Angel. Depends on the F&O universe being in place.
 - **Sector breadth over time** (overview, 2026-11-17): which sectors are gaining share of stocks above their MA; plus other time-series charts of breadth. Data is ready: `sector_breadth` holds full daily history for nifty500 / nifty50 / all at MA 10, 20, 50, 200.
 - **Chart grid on Scans results** (scans UI, 2026-11-17): reuse the sector view's Table | Charts switch.

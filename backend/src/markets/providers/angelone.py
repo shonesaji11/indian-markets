@@ -109,9 +109,11 @@ class AngelOneProvider:
                 raise  # login problems will not fix themselves on retry
             except Exception as exc:  # SmartConnect raises plain exceptions on HTTP/rate-limit errors
                 last_error = str(exc)
-                rate_limited = "exceeding access rate" in last_error
                 log.warning("getCandleData failed (attempt %d): %s", attempt + 1, exc)
-                time.sleep(5.0 if rate_limited else 1.5 * (attempt + 1))
+                if attempt + 1 < self._max_retries:
+                    # Rate-limit rejections need the per-minute window to drain: 15s, 30s, 60s.
+                    rate_limited = "exceeding access rate" in last_error
+                    time.sleep(min(15.0 * 2 ** attempt, 60.0) if rate_limited else 1.5 * (attempt + 1))
                 continue
             if resp and resp.get("status"):
                 return resp.get("data") or []
@@ -120,7 +122,8 @@ class AngelOneProvider:
             log.warning("getCandleData error (attempt %d): %s", attempt + 1, last_error)
             if code in _TOKEN_ERRORS:
                 self._api = None
-            time.sleep(1.5 * (attempt + 1))
+            if attempt + 1 < self._max_retries:
+                time.sleep(1.5 * (attempt + 1))
         raise ProviderError(f"getCandleData failed for {params['symboltoken']}: {last_error}")
 
     # ---- plumbing ----------------------------------------------------------------

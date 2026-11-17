@@ -65,7 +65,8 @@ def test_scans_rank_and_filter():
 def test_watchlist_membership_keeps_history(container, constituents):
     first = container.watchlist_sync.sync("nifty500")
     assert first["members"] == 4 and first["added"] == 4
-    before_change = datetime.now()
+    # DuckDB's clock, not Python's: on Windows the two can disagree by a few ms.
+    before_change = container.db.cursor().execute("SELECT now()::TIMESTAMP").fetchone()[0]
 
     constituents.symbols = ["RELIANCE", "TCS", "INFY"]  # HDFCBANK leaves the index
     second = container.watchlist_sync.sync("nifty500")
@@ -84,6 +85,37 @@ def test_daily_update_fetches_watchlists_and_tracked(container):
 
     again = container.daily_update.run(sync_instruments=False)
     assert again.ok == 5 and again.bars_written <= 5  # incremental: only the latest bar is re-checked
+
+
+def test_daily_update_retries_failures_once(container, monkeypatch):
+    provider = container.ingestion.provider
+    real_fetch = provider.fetch_candles
+    tokens = {container.instruments.provider_token(container.instruments.find("NSE", s).instrument_id, provider.name)
+              for s in ("TCS-EQ", "INFY-EQ")}
+    transient, persistent = sorted(tokens)
+    calls = []
+
+    def flaky_fetch(token, *args):
+        calls.append(token)
+        if token == persistent or (token == transient and calls.count(token) == 1):
+            raise RuntimeError("Access denied because of exceeding access rate")
+        return real_fetch(token, *args)
+
+    monkeypatch.setattr(provider, "fetch_candles", flaky_fetch)
+    container.daily_update.retry_delay = 0
+    report = container.daily_update.run(sync_instruments=False)
+
+    assert report.targets == 5 and report.retried == 2
+    assert report.ok == 4 and report.failed == 1  # the transient one recovered on the retry pass
+    assert calls.count(transient) == 2 and calls.count(persistent) == 2  # retried once, not more
+    assert len(report.errors) == 1 and "exceeding access rate" in report.errors[0]
+
+
+def test_daily_update_skips_retry_pass_when_all_ok(container, monkeypatch):
+    slept = []
+    monkeypatch.setattr("markets.pipelines.daily_update.time.sleep", slept.append)
+    report = container.daily_update.run(sync_instruments=False)
+    assert report.retried == 0 and report.failed == 0 and slept == []
 
 
 def test_overview_endpoint(container, reliance_id):

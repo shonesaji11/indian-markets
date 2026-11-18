@@ -64,10 +64,12 @@ All rules, preferences and project knowledge live in the project: this file, `BO
 - Scan the staged diff (`git diff --cached`) for credentials: API keys, passwords, PINs, TOTP secrets, tokens (`Bearer`, `eyJ...` JWTs), `authtoken`, IPs/MAC addresses, real account or client codes. Example files must hold placeholders only.
 - If anything turns up, unstage it, move the value to a gitignored file, and tell me before committing.
 
-## Branches (other agents edit this folder too)
-- Never switch branches or commit others' uncommitted work in the main folder: a `git checkout` there changes the branch under every other agent and drags their unfinished edits along.
-- For any code change, work in your own worktree on a temporary branch off `main`, outside OneDrive (so `node_modules` and DB files aren't synced): `git worktree add C:\Users\shone\worktrees\markets-<name> -b feat/<name> main`. It needs its own `npm install` and `backend/.env` copy; tests use their own temp DBs.
-- When done and checked, commit on the branch, then merge into `main` from the main folder (`git merge --no-ff feat/<name>`). If git refuses because another agent's uncommitted edits touch the same files, stop and tell me; never stash or discard their work. Then remove the worktree and delete the branch.
+## Branches and pull requests (several chats work here at once)
+- The main folder stays on `main` and is never edited: no file changes, commits, branch switches or stashes there. It runs the app and only fast-forwards (`git pull --ff-only`) after a merge. A `git checkout` there would change the branch under every other chat.
+- Every change (code or docs, however small) starts in its own worktree on a new branch from the latest `origin/main`, outside OneDrive (so `node_modules` and DB files aren't synced): `git fetch origin`, then `git worktree add C:\Users\shone\worktrees\markets-<name> -b feat/<name> origin/main`. The frontend needs its own `npm install` and the backend a copy of `backend/.env`; run backend tests with the main folder's `.venv` python and `PYTHONPATH=src` so the worktree's code is the one tested. Subagents that edit files work in that same worktree, never in the main folder.
+- When the work is done and checked ("Before calling work done"): commit on the branch, `git fetch origin` and rebase onto `origin/main` (re-run the tests if `main` moved), push the branch, open a PR with `gh pr create` (body = the commit message), give me the link, and stop.
+- If the rebase conflicts with another chat's merged work, resolve it only when it is clearly mechanical, re-run the tests, and say so; otherwise stop and tell me.
+- Merge only after I approve it in that chat. Then: `git worktree remove` the folder, and from the main folder `gh pr merge <number> --merge --delete-branch` (deletes the branch on GitHub and locally) and `git pull --ff-only`. Never push to `main` directly.
 
 ## Project context
 - Backend: `backend/src/markets` (FastAPI + DuckDB). Frontend: React in `frontend/`.

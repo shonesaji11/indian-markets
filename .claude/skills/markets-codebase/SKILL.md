@@ -41,6 +41,7 @@ Launcher: repo-root `start-dashboard.bat` starts backend, Vite and an ngrok tunn
 | New watchlist / universe | `universes.WATCHLISTS` (`WatchlistSpec` with NSE `index` slug or explicit `EXCHANGE:SYMBOL` members). |
 | New page | `pages/XPage.tsx` + route in `App.tsx` + entry in the `NAV` array, both in `App.tsx`. Compose from `components/ui` and `features/*`. |
 | New list that opens charts | Call `useOpenChart()(instrumentId, {title, context, items: toListItems(shownRows)})` from `features/charts/chartList.ts`; never `navigate('/chart?…')` directly. |
+| New data-quality check | Pure `find_*` function in `engine/data_quality.py` + wire it into `DataQualityService` (`BAR_CHECKS` if it looks at bars, `GLOBAL_CHECKS` otherwise), bump `DQ_VERSION`, describe it in `.claude/skills/audit/SKILL.md`. The nightly audit (scheduled task, `audit` skill) reads `markets dq report` |
 | New UI widget | Generic → `components/ui/` and export from `index.ts`; feature-specific → `features/<area>/`. Check the existing list in references/frontend.md first. |
 
 ## References

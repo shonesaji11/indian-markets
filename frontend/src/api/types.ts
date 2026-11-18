@@ -152,9 +152,16 @@ export interface Watchlist {
 
 export type ScanOp = 'gt' | 'gte' | 'lt' | 'lte' | 'crosses_above' | 'crosses_below';
 
-export type ScanOperand =
+/** Read an operand N trading sessions back: d = 1, w = 5, m = 21 sessions (up to 252). */
+export interface ScanAgo {
+  n: number;
+  unit: 'd' | 'w' | 'm';
+}
+
+export type ScanOperand = (
   | { type: 'field'; field: string }
-  | { type: 'indicator'; name: string; params: Record<string, ParamValue>; output: string };
+  | { type: 'indicator'; name: string; params: Record<string, ParamValue>; output: string }
+) & { ago?: ScanAgo };
 
 /** Right-hand side: an operand or a number (percent fields take percentages, e.g. 2.5 = 2.5%). */
 export type ScanRight = ScanOperand | { type: 'value'; value: number | null };

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Optional, Sequence
 
 import pandas as pd
@@ -10,8 +10,9 @@ from markets.engine.registry import IndicatorRegistry
 from markets.engine.screener import (
     FIELDS,
     TIMEFRAME,
+    bars_ago,
     evaluate,
-    indicator_values,
+    indicator_frame,
     iter_operands,
     lookback_bars,
     operand_key,
@@ -83,29 +84,50 @@ class ScreenerService:
         }
 
     def _values(self, operands: dict[str, dict], snap: pd.DataFrame, trading_day, need_prev: bool):
+        """(value, session before) per operand key. An operand `ago` N sessions reads session N back on
+        the universe's calendar; an instrument with no bar on that exact session gets NaN (left out)."""
         index = snap.index
         nan = pd.Series(float("nan"), index=index)
-        prev_snap = pd.DataFrame(index=index)
-        if need_prev and trading_day is not None:
-            # Each instrument's bar before the session, for crossovers.
-            prev_snap = self.market.snapshot(trading_day - timedelta(microseconds=1), list(index))
-            prev_snap = prev_snap.set_index("instrument_id").reindex(index)
+        offsets = {key: bars_ago(op) for key, op in operands.items()}
+        needed = set(offsets.values()) | ({n + 1 for n in offsets.values()} if need_prev else set())
+        sessions = (self.market.recent_sessions(list(index), trading_day, max(needed) + 1)
+                    if needed and trading_day is not None and len(index) else [])
+        session = lambda n: sessions[n] if n < len(sessions) else None
+
+        snaps = {0: snap}
+
+        def field_at(field: str, n: int) -> pd.Series:
+            if n not in snaps:
+                day = session(n)
+                rows = self.market.snapshot(day, list(index)) if day is not None else pd.DataFrame()
+                rows = rows[rows["ts"] == day] if not rows.empty else rows
+                snaps[n] = rows.set_index("instrument_id").reindex(index) if not rows.empty else pd.DataFrame(index=index)
+            frame = snaps[n]
+            return frame[field].astype("float64") if field in frame else nan
 
         values = {}
-        indicators = {k: op for k, op in operands.items() if op["type"] == "indicator"}
         for key, op in operands.items():
             if op["type"] == "field":
-                prev = prev_snap[op["field"]] if op["field"] in prev_snap else nan
-                values[key] = (snap[op["field"]].astype("float64"), prev)
+                n = offsets[key]
+                values[key] = (field_at(op["field"], n), field_at(op["field"], n + 1) if need_prev else nan)
 
+        indicators = {k: op for k, op in operands.items() if op["type"] == "indicator"}
         if indicators and len(index) and trading_day is not None:
             specs = {k: self.registry.get(op["name"]) for k, op in indicators.items()}
-            depth = max(lookback_bars(specs[k], op.get("params") or {}) for k, op in indicators.items())
+            depth = max(lookback_bars(specs[k], op.get("params") or {}) for k, op in indicators.items()) + max(needed) + 1
             bars = self.market.daily_bars(list(index), trading_day, depth)
+
+            def pick(frame: pd.DataFrame, n: int) -> pd.Series:
+                day = session(n)
+                if day is None or day not in frame.index:
+                    return nan
+                return frame.loc[day].reindex(index).astype("float64")
+
             for key, op in indicators.items():
                 spec = specs[key]
-                now, prev = indicator_values(spec, op.get("params") or {}, op.get("output") or spec.name, bars)
-                values[key] = (now.reindex(index), prev.reindex(index))
+                frame = indicator_frame(spec, op.get("params") or {}, op.get("output") or spec.name, bars)
+                n = offsets[key]
+                values[key] = (pick(frame, n), pick(frame, n + 1) if need_prev else nan)
         else:
             values.update({k: (nan, nan) for k in indicators})
         return values

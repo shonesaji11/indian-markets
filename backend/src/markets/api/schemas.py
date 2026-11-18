@@ -85,6 +85,16 @@ class ScanPerformanceIn(BaseModel):
     end: Optional[date] = None  # last session to measure to; default latest stored
 
 
+class DqCheckIn(BaseModel):
+    full: bool = False  # re-check all history instead of only newly ingested bars
+    checks: Optional[list[str]] = None  # default: every check
+    instruments: Optional[list[str]] = None  # ids or EXCHANGE:SYMBOL; default: everything
+
+
+class DqAcceptIn(BaseModel):
+    note: str  # why the issue is fine
+
+
 class SavedScanIn(BaseModel):
     name: str
     definition: dict[str, Any]  # {"filter": ..., "universe": ..., "include_indices": ...}

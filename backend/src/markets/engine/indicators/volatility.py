@@ -19,3 +19,11 @@ def bollinger(candles: pd.DataFrame, period: int = 20, stddev: float = 2.0) -> p
     middle = close.rolling(period, min_periods=period).mean()
     spread = close.rolling(period, min_periods=period).std(ddof=0) * stddev
     return pd.DataFrame({"upper": middle + spread, "middle": middle, "lower": middle - spread})
+
+
+@indicator("adr_pct", version=1, outputs=["adr_pct"],
+           description="Average daily range %: 100 × (mean of high/low over N bars − 1)")
+def adr_pct(candles: pd.DataFrame, period: int = 20) -> pd.Series:
+    # A zero or missing low makes that bar's ratio NaN, so any window containing it is NaN too.
+    ratio = candles["high"] / candles["low"].where(candles["low"] > 0)
+    return 100 * (ratio.rolling(period, min_periods=period).mean() - 1)

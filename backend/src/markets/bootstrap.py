@@ -15,6 +15,7 @@ from markets.engine import IndicatorRegistry, default_registry
 from markets.pipelines.breadth import BreadthService
 from markets.pipelines.compute import CalcService
 from markets.pipelines.daily_update import DailyUpdateService
+from markets.pipelines.data_quality import DataQualityService
 from markets.pipelines.ingest import IngestionService
 from markets.pipelines.market_overview import MarketOverviewService
 from markets.pipelines.screener import ScreenerService
@@ -26,6 +27,7 @@ from markets.storage.duckdb import (
     DuckBreadthRepository,
     DuckCalcRepository,
     DuckCandleRepository,
+    DuckDataQualityRepository,
     DuckIngestionLog,
     DuckInstrumentRepository,
     DuckMarketRepository,
@@ -57,6 +59,7 @@ class Container:
     overview: MarketOverviewService
     screener: ScreenerService
     breadth: BreadthService
+    data_quality: DataQualityService
 
     def close(self) -> None:
         self.provider.close()
@@ -84,6 +87,7 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
     ingestion = IngestionService(provider, instruments, candles, ingestion_log)
     watchlist_sync = WatchlistService(watchlist_specs, watchlists, instruments, constituents or NseIndexSource(), provider)
     breadth = BreadthService(DuckBreadthRepository(db), BREADTH_UNIVERSES, BREADTH_PERIODS)
+    data_quality = DataQualityService(DuckDataQualityRepository(db), watchlists)
     benchmarks = next((s.members for s in watchlist_specs if s.watchlist_id == "benchmarks"), ())
 
     return Container(
@@ -101,9 +105,11 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
         ingestion=ingestion,
         calc_service=CalcService(registry, candles, calcs),
         watchlist_sync=watchlist_sync,
-        daily_update=DailyUpdateService(ingestion, watchlist_sync, watchlists, market, breadth),
+        daily_update=DailyUpdateService(ingestion, watchlist_sync, watchlists, market, breadth,
+                                        data_quality=data_quality),
         overview=MarketOverviewService(market, watchlists, benchmarks),
         breadth=breadth,
+        data_quality=data_quality,
         screener=ScreenerService(registry, market, watchlists, DuckSavedScanRepository(db), instruments,
                                  *benchmarks[:1]),
     )

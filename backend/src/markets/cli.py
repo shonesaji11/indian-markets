@@ -71,6 +71,23 @@ def main(argv: Optional[list[str]] = None) -> None:
     p = sub.add_parser("watchlists", help="sync watchlists from universes.py and list them")
     p.add_argument("--no-sync", action="store_true")
 
+    p = sub.add_parser("dq", help="data-quality issues: report, run checks, accept known issues")
+    dq = p.add_subparsers(dest="dq_command", required=True)
+    q = dq.add_parser("report", help="issue counts, then the issues matching the filters")
+    q.add_argument("--status", default="open", help="open (default), resolved, accepted or all")
+    q.add_argument("--check", help="one check: gap, bad_bar, jump, stale, short_history, failed_download")
+    q.add_argument("--instrument", help="id or EXCHANGE:SYMBOL")
+    q.add_argument("--limit", type=int, default=200)
+    q = dq.add_parser("check", help="run checks now (default: all, on bars ingested since the last run)")
+    q.add_argument("--check", action="append", help="limit to this check; repeatable")
+    q.add_argument("--instrument", action="append", help="limit to this instrument (all its history); repeatable")
+    q.add_argument("--full", action="store_true", help="re-check all history")
+    q = dq.add_parser("accept", help="mark an issue as known and fine")
+    q.add_argument("issue_id")
+    q.add_argument("--note", required=True, help="why it is fine")
+    for q in dq.choices.values():
+        q.add_argument("--api", default="http://127.0.0.1:8000", help="API server to use when it holds the database")
+
     p = sub.add_parser("serve", help="run the API server")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
@@ -96,6 +113,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         busy = any(s in str(exc).lower() for s in ("lock", "already open"))
         if args.command == "update" and busy:
             _update_via_api(args.api, not args.skip_instrument_sync)
+            return
+        if args.command == "dq" and busy:
+            print(f"database is in use by the API server; using {args.api}")
+            _dq_via_api(args)
             return
         if args.command == "breadth" and busy:
             print(f"database is in use by the API server; running through {args.api}")
@@ -135,6 +156,8 @@ def main(argv: Optional[list[str]] = None) -> None:
                           + (f", {len(r['missing'])} not found" if r["missing"] else ""))
             for w in c.watchlists.all():
                 print(f"{w['watchlist_id']:<12} {w['members']:>4}  {w['name']}")
+        elif args.command == "dq":
+            _dq_direct(c, args)
         elif args.command == "coverage":
             for row in c.candles.coverage():
                 print(f"{row['exchange']}:{row['symbol']:<24} {row['timeframe']:>4}  {row['bars']:>7} bars  "
@@ -151,8 +174,63 @@ def _print_report(r: dict) -> None:
           + (f" in {took}" if took else ""))
     for w in r["watchlists"]:
         print(f"  watchlist {w['watchlist_id']}: {w['members']} members (+{w['added']} -{w['removed']})")
+    if r.get("data_quality"):
+        _print_dq_run(r["data_quality"])
     for e in r["errors"][:20]:
         print(f"  error: {e}")
+
+
+def _dq_direct(c, args) -> None:
+    if args.dq_command == "report":
+        ids = _resolve(c, [args.instrument]) if args.instrument else [None]
+        _print_dq_report(c.data_quality.report(None if args.status == "all" else args.status, args.check, ids[0], args.limit))
+    elif args.dq_command == "check":
+        ids = _resolve(c, args.instrument) if args.instrument else None
+        _print_dq_run(c.data_quality.run(args.full, args.check, ids))
+        _print_dq_report(c.data_quality.report("open", args.check[0] if args.check and len(args.check) == 1 else None,
+                                               ids[0] if ids and len(ids) == 1 else None, 200))
+    elif args.dq_command == "accept":
+        if not c.data_quality.accept(args.issue_id, args.note):
+            raise SystemExit(f"no issue {args.issue_id}")
+        print(f"accepted {args.issue_id}")
+
+
+def _dq_via_api(args) -> None:
+    import httpx
+
+    if args.dq_command == "report":
+        params = {"status": args.status, "check": args.check, "instrument": args.instrument, "limit": args.limit}
+        resp = httpx.get(f"{args.api}/api/dq/issues", params={k: v for k, v in params.items() if v is not None})
+        resp.raise_for_status()
+        _print_dq_report(resp.json())
+    elif args.dq_command == "check":
+        body = {"full": args.full, "checks": args.check, "instruments": args.instrument}
+        resp = httpx.post(f"{args.api}/api/dq/check", json=body, timeout=None)
+        resp.raise_for_status()
+        _print_dq_run(resp.json())
+    elif args.dq_command == "accept":
+        resp = httpx.post(f"{args.api}/api/dq/issues/{args.issue_id}/accept", json={"note": args.note})
+        resp.raise_for_status()
+        print(f"accepted {args.issue_id}")
+
+
+def _print_dq_run(r: dict) -> None:
+    print(f"data quality ({r['mode']}): {r['instruments_rechecked']} instruments re-checked, {r['open']} open issues")
+    for name, s in r["checks"].items():
+        print(f"  {name:<16} {s['found']:>6} found  {s['new']:>5} new  {s['resolved']:>5} resolved")
+
+
+def _print_dq_report(r: dict) -> None:
+    if not r["counts"]:
+        print("no data-quality issues recorded")
+    for row in r["counts"]:
+        print(f"{row['check_name']:<16} {row['status']:<9} {row['issues']:>6}")
+    if r["issues"]:
+        print()
+    for i in r["issues"]:
+        span = str(i["start_ts"])[:10] + ("" if str(i["end_ts"])[:10] == str(i["start_ts"])[:10] else f" -> {str(i['end_ts'])[:10]}")
+        print(f"{i['check_name']:<16} {i['exchange'] or ''}:{i['symbol'] or i['instrument_id']:<22} {span:<24} "
+              f"{i['detail'] or ''}  [{i['status']}, seen {i['seen_count']}x] {i['issue_id']}")
 
 
 def _update_via_api(base_url: str, sync_instruments: bool) -> None:

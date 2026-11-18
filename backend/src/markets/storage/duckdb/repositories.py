@@ -533,6 +533,24 @@ class DuckMarketRepository:
         cur.unregister("universe")
         return df
 
+    def recent_sessions(self, instrument_ids: Sequence[int], as_of: datetime, count: int) -> list[pd.Timestamp]:
+        """The last `count` trading sessions on or before `as_of` (newest first): days on which any of
+        `instrument_ids` has a daily bar."""
+        if not instrument_ids or count < 1:
+            return []
+        ids = pd.DataFrame({"instrument_id": pd.Series(list(instrument_ids), dtype="int64")})
+        cur = self._db.cursor()
+        cur.register("universe", ids)
+        rows = cur.execute(
+            """
+            SELECT DISTINCT ts FROM candles c JOIN universe u USING (instrument_id)
+            WHERE c.timeframe = '1d' AND c.ts <= ? ORDER BY ts DESC LIMIT ?
+            """,
+            [as_of, count],
+        ).fetchall()
+        cur.unregister("universe")
+        return [pd.Timestamp(r[0]) for r in rows]
+
     def daily_prices(self, instrument_ids: Sequence[int], start: datetime, end: datetime) -> pd.DataFrame:
         """Daily opens and closes per instrument with `start <= ts <= end`, long format."""
         cols = ["instrument_id", "ts", "open", "close"]
@@ -679,3 +697,174 @@ class DuckBreadthRepository:
         """
         params: list[Any] = [universe, end, start, start, *member_params, *([universe] * len(periods))]
         return sql, params
+
+
+class DuckDataQualityRepository:
+    """Inputs for the data-quality checks (engine/data_quality.py), the issues they find, and run state."""
+
+    def __init__(self, db: Database):
+        self._db = db
+
+    # --- state ---------------------------------------------------------------------------
+
+    def get_state(self, key: str) -> Optional[str]:
+        row = self._db.cursor().execute("SELECT value FROM dq_state WHERE key = ?", [key]).fetchone()
+        return row[0] if row else None
+
+    def set_state(self, key: str, value: str) -> None:
+        self._db.cursor().execute("INSERT OR REPLACE INTO dq_state VALUES (?, ?, current_timestamp)", [key, value])
+
+    # --- check inputs --------------------------------------------------------------------
+
+    def max_ingested_at(self) -> Optional[datetime]:
+        return self._db.cursor().execute("SELECT max(ingested_at) FROM candles WHERE timeframe = '1d'").fetchone()[0]
+
+    def changed_since(self, watermark: Optional[datetime], instrument_ids: Optional[Sequence[int]] = None) -> pd.DataFrame:
+        """instrument_id, from_ts: instruments with daily bars ingested after `watermark` and the
+        earliest such bar (every instrument from its first bar when `watermark` is None)."""
+        where, params = ["timeframe = '1d'"], []
+        if watermark is not None:
+            where.append("ingested_at > ?")
+            params.append(watermark)
+        if instrument_ids is not None:
+            where.append(f"instrument_id IN ({','.join('?' * len(instrument_ids))})" if instrument_ids else "FALSE")
+            params.extend(instrument_ids)
+        return self._db.cursor().execute(
+            f"SELECT instrument_id, min(ts) AS from_ts FROM candles WHERE {' AND '.join(where)} GROUP BY 1",
+            params).df()
+
+    def bars_from(self, changed: pd.DataFrame) -> pd.DataFrame:
+        """Daily bars of each changed instrument from the bar before its `from_ts` (context for the gap
+        and jump checks) to its latest, with instrument_type."""
+        names = ["instrument_id", "ts", "open", "high", "low", "close", "volume", "instrument_type"]
+        if changed.empty:
+            return pd.DataFrame(columns=names)
+        cur = self._db.cursor()
+        cur.register("changed", changed)
+        df = cur.execute(
+            """
+            WITH ctx AS (
+                SELECT ch.instrument_id, coalesce(max(p.ts), min(ch.from_ts)) AS start_ts
+                FROM changed ch
+                LEFT JOIN candles p ON p.instrument_id = ch.instrument_id AND p.timeframe = '1d' AND p.ts < ch.from_ts
+                GROUP BY ch.instrument_id
+            )
+            SELECT c.instrument_id, c.ts, c.open, c.high, c.low, c.close, c.volume, i.instrument_type
+            FROM candles c JOIN ctx USING (instrument_id) JOIN instruments i USING (instrument_id)
+            WHERE c.timeframe = '1d' AND c.ts >= ctx.start_ts
+            ORDER BY c.instrument_id, c.ts
+            """
+        ).df()
+        cur.unregister("changed")
+        return df
+
+    def instruments_per_day(self) -> pd.Series:
+        """Distinct stocks (not indices) with a daily bar, per day: the input for the market calendar."""
+        df = self._db.cursor().execute(
+            """SELECT c.ts, count(DISTINCT c.instrument_id) AS n FROM candles c JOIN instruments i USING (instrument_id)
+               WHERE c.timeframe = '1d' AND i.instrument_type IS DISTINCT FROM 'INDEX' GROUP BY 1 ORDER BY 1"""
+        ).df()
+        return df.set_index("ts")["n"] if not df.empty else pd.Series(dtype="int64")
+
+    def bar_summary(self, instrument_ids: Sequence[int]) -> pd.DataFrame:
+        """Per instrument (index): first_ts, last_ts and number of daily bars."""
+        cols = ["first_ts", "last_ts", "bars"]
+        if not instrument_ids:
+            return pd.DataFrame(columns=cols)
+        ids = pd.DataFrame({"instrument_id": pd.Series(list(instrument_ids), dtype="int64")})
+        cur = self._db.cursor()
+        cur.register("ids", ids)
+        df = cur.execute(
+            """SELECT instrument_id, min(ts) AS first_ts, max(ts) AS last_ts, count(*) AS bars
+               FROM candles JOIN ids USING (instrument_id) WHERE timeframe = '1d' GROUP BY 1"""
+        ).df()
+        cur.unregister("ids")
+        return df.set_index("instrument_id")[cols]
+
+    def failed_downloads(self) -> pd.DataFrame:
+        """Daily downloads whose latest attempt failed: instrument_id, start_ts/end_ts (the window), detail."""
+        return self._db.cursor().execute(
+            """
+            SELECT instrument_id, window_start AS start_ts, window_end AS end_ts, error AS detail, status
+            FROM ingestion_runs WHERE timeframe = '1d' AND status <> 'running'
+            QUALIFY row_number() OVER (PARTITION BY instrument_id ORDER BY started_at DESC) = 1
+            """
+        ).df().query("status == 'error'").drop(columns="status")
+
+    # --- issues --------------------------------------------------------------------------
+
+    def record(self, check: str, found: pd.DataFrame, now: datetime, status: str = "open",
+               note: Optional[str] = None) -> pd.DataFrame:
+        """Upsert `found` (instrument_id, start_ts, end_ts, detail) as issues of `check`; returns them with
+        issue_id and `new`. A resolved issue seen again reopens; an accepted one stays accepted."""
+        if found.empty:
+            return found.assign(issue_id=pd.Series(dtype=str), new=pd.Series(dtype=bool))
+        df = found.copy()
+        start = pd.to_datetime(df["start_ts"]).dt.strftime("%Y-%m-%d").fillna("-")
+        df["issue_id"] = check + ":" + df["instrument_id"].astype(str) + ":" + start
+        df = df.drop_duplicates("issue_id", keep="last")
+        cur = self._db.cursor()
+        cur.register("found", df)
+        known = {r[0] for r in cur.execute("SELECT issue_id FROM dq_issues JOIN found USING (issue_id)").fetchall()}
+        cur.execute(
+            """
+            INSERT INTO dq_issues (issue_id, check_name, instrument_id, start_ts, end_ts, detail, status, note,
+                                   first_seen, last_seen, seen_count, resolved_at)
+            SELECT issue_id, ?, instrument_id, start_ts, end_ts, detail, ?, ?, ?, ?, 1, NULL FROM found
+            ON CONFLICT (issue_id) DO UPDATE SET
+                end_ts = excluded.end_ts, detail = excluded.detail, last_seen = excluded.last_seen,
+                seen_count = dq_issues.seen_count + 1,
+                status = CASE WHEN dq_issues.status = 'accepted' THEN 'accepted' ELSE excluded.status END,
+                resolved_at = NULL
+            """,
+            [check, status, note, now, now],
+        )
+        cur.unregister("found")
+        df["new"] = ~df["issue_id"].isin(known)
+        return df
+
+    def resolve_missing(self, check: str, seen_ids: Sequence[str], now: datetime,
+                        scope: Optional[pd.DataFrame] = None, statuses: Sequence[str] = ("open",)) -> int:
+        """Mark open issues of `check` resolved when a re-check no longer finds them. `scope`
+        (instrument_id, from_ts) limits this to the instruments and dates just re-checked; None = all."""
+        cur = self._db.cursor()
+        cur.register("seen", pd.DataFrame({"issue_id": pd.Series(list(seen_ids), dtype=str)}))
+        where = (f"check_name = ? AND status IN ({','.join('?' * len(statuses))})"
+                 " AND issue_id NOT IN (SELECT issue_id FROM seen)")
+        if scope is not None:
+            cur.register("scope", scope)
+            where += """ AND EXISTS (SELECT 1 FROM scope s WHERE s.instrument_id = dq_issues.instrument_id
+                                     AND (dq_issues.end_ts IS NULL OR dq_issues.end_ts >= s.from_ts))"""
+        resolved = cur.execute(
+            f"UPDATE dq_issues SET status = 'resolved', resolved_at = ? WHERE {where} RETURNING issue_id",
+            [now, check, *statuses]).fetchall()
+        cur.unregister("seen")
+        if scope is not None:
+            cur.unregister("scope")
+        return len(resolved)
+
+    def issues(self, status: Optional[str] = "open", check: Optional[str] = None,
+               instrument_id: Optional[int] = None, limit: int = 1000) -> list[dict[str, Any]]:
+        """Issues with exchange and symbol, by check then symbol; `None` filters are ignored."""
+        where, params = [], []
+        for col, val in (("q.status", status), ("q.check_name", check), ("q.instrument_id", instrument_id)):
+            if val is not None:
+                where.append(f"{col} = ?")
+                params.append(val)
+        df = self._db.cursor().execute(
+            f"""SELECT q.*, i.exchange, i.symbol FROM dq_issues q LEFT JOIN instruments i USING (instrument_id)
+                {'WHERE ' + ' AND '.join(where) if where else ''}
+                ORDER BY q.check_name, i.symbol, q.start_ts LIMIT ?""",
+            [*params, limit]).df()
+        return [{k: (None if pd.isna(v) else v) for k, v in r.items()} for r in df.to_dict("records")]
+
+    def counts(self) -> list[dict[str, Any]]:
+        """Issues per check and status."""
+        return [dict(zip(("check_name", "status", "issues"), r)) for r in self._db.cursor().execute(
+            "SELECT check_name, status, count(*) FROM dq_issues GROUP BY 1, 2 ORDER BY 1, 2").fetchall()]
+
+    def accept(self, issue_id: str, note: str) -> bool:
+        """Mark an issue as known and fine, so it stops being reported as open."""
+        return bool(self._db.cursor().execute(
+            "UPDATE dq_issues SET status = 'accepted', note = ? WHERE issue_id = ? RETURNING issue_id",
+            [note, issue_id]).fetchall())

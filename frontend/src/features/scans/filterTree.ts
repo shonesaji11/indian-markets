@@ -1,4 +1,4 @@
-import type { IndicatorInfo, ScanCondition, ScanField, ScanGroup, ScanOp, ScanOperand } from '@/api/types';
+import type { IndicatorInfo, ScanAgo, ScanCondition, ScanField, ScanGroup, ScanOp, ScanOperand } from '@/api/types';
 import type { UrlCodec } from '@/hooks/useUrlState';
 
 export const EMPTY_FILTER: ScanGroup = { type: 'group', match: 'all', items: [] };
@@ -21,14 +21,30 @@ export const newCondition = (): ScanCondition => ({
 
 export const newGroup = (match: ScanGroup['match'] = 'any'): ScanGroup => ({ type: 'group', match, items: [newCondition()] });
 
-/** Drop conditions whose number isn't filled in yet, and groups left empty, so half-edited rows don't run. */
+/** Sessions per "ago" unit and the furthest back an operand may read; mirrors engine/screener.py. */
+export const AGO_UNITS: Record<ScanAgo['unit'], number> = { d: 1, w: 5, m: 21 };
+export const MAX_AGO_BARS = 252;
+
+/** Message when an operand's offset is invalid, else null. */
+export function agoError(op: ScanOperand): string | null {
+  const ago = op.ago;
+  if (!ago) return null;
+  return Number.isInteger(ago.n) && ago.n >= 0 && ago.n * AGO_UNITS[ago.unit] <= MAX_AGO_BARS
+    ? null
+    : `Up to 12 months back (${MAX_AGO_BARS} sessions), whole numbers only.`;
+}
+
+export const conditionError = (c: ScanCondition) => agoError(c.left) ?? (c.right.type === 'value' ? null : agoError(c.right));
+
+/** Drop conditions whose number isn't filled in yet or whose offset is invalid, and groups left empty, so half-edited rows don't run. */
 export function prune(group: ScanGroup): ScanGroup {
   const items = group.items
     .map((item) => (item.type === 'group' ? prune(item) : item))
     .filter((item) =>
       item.type === 'group'
         ? item.items.length > 0
-        : item.right.type !== 'value' || (item.right.value != null && Number.isFinite(item.right.value)),
+        : !conditionError(item) &&
+          (item.right.type !== 'value' || (item.right.value != null && Number.isFinite(item.right.value))),
     );
   return { ...group, items };
 }
@@ -40,11 +56,12 @@ export function operandValue(op: ScanOperand): string {
 
 export function operandFromValue(value: string, indicators: IndicatorInfo[], current?: ScanOperand): ScanOperand {
   const [kind, name, output] = value.split(':');
-  if (kind === 'f') return { type: 'field', field: name };
+  // The offset belongs to the slot, so it survives picking another field or indicator.
+  if (kind === 'f') return { type: 'field', field: name, ago: current?.ago };
   // Keep edited params when only the output changes (macd line -> signal).
   const params =
     current?.type === 'indicator' && current.name === name ? current.params : { ...indicators.find((i) => i.name === name)?.params };
-  return { type: 'indicator', name, output, params };
+  return { type: 'indicator', name, output, params, ago: current?.ago };
 }
 
 export function operandOptions(fields: ScanField[], indicators: IndicatorInfo[]) {
@@ -58,7 +75,7 @@ export function operandOptions(fields: ScanField[], indicators: IndicatorInfo[])
 
 /** `RELATIVE VOLUME`, `MACD · signal`. */
 const indicatorLabel = (i: IndicatorInfo, output: string) => {
-  const name = i.name.replace(/_/g, ' ').toUpperCase();
+  const name = i.name.replace(/_pct$/, '%').replace(/_/g, ' ').toUpperCase();
   return i.outputs.length > 1 ? `${name} · ${output}` : name;
 };
 

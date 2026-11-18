@@ -9,6 +9,7 @@ from typing import Any, Optional
 
 from markets.core.models import Interval
 from markets.pipelines.breadth import BreadthService
+from markets.pipelines.data_quality import DataQualityService
 from markets.pipelines.ingest import IngestionService
 from markets.pipelines.watchlists import WatchlistService
 from markets.storage.duckdb.repositories import DuckMarketRepository, DuckWatchlistRepository
@@ -28,6 +29,7 @@ class DailyUpdateReport:
     retried: int = 0
     bars_written: int = 0
     breadth_rows: int = 0
+    data_quality: Optional[dict[str, Any]] = None  # DataQualityService.run() summary
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -45,10 +47,12 @@ class DailyUpdateService:
 
     def __init__(self, ingestion: IngestionService, watchlist_sync: WatchlistService,
                  watchlists: DuckWatchlistRepository, market: DuckMarketRepository,
-                 breadth: Optional[BreadthService] = None, retry_delay: float = 60.0):
+                 breadth: Optional[BreadthService] = None, retry_delay: float = 60.0,
+                 data_quality: Optional[DataQualityService] = None):
         self.ingestion = ingestion
         self.retry_delay = retry_delay
         self.breadth = breadth
+        self.data_quality = data_quality
         self.watchlist_sync = watchlist_sync
         self.watchlists = watchlists
         self.market = market
@@ -106,6 +110,14 @@ class DailyUpdateService:
             except Exception as exc:
                 report.errors.append(f"sector breadth: {exc}")
                 log.exception("sector breadth update failed")
+
+        # Last step: check what was just loaded (and anything re-downloaded) for data-quality issues.
+        if self.data_quality is not None:
+            try:
+                report.data_quality = self.data_quality.run()
+            except Exception as exc:
+                report.errors.append(f"data quality: {exc}")
+                log.exception("data-quality checks failed")
 
         report.finished_at = datetime.now()
         log.info("daily update done: %d ok, %d failed (%d retried), %d bars",

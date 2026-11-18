@@ -49,3 +49,23 @@ def test_custom_registry_is_isolated():
 
     out = reg.get("double").compute(make_candles([1, 2]))
     assert out["x2"].tolist() == [2.0, 4.0]
+
+
+def adr(high, low, period=3):
+    idx = pd.date_range("2024-01-01", periods=len(high), freq="B", name="ts")
+    candles = pd.DataFrame({"open": 1.0, "high": high, "low": low, "close": 1.0, "volume": 1.0}, index=idx, dtype=float)
+    return default_registry().get("adr_pct").compute(candles, {"period": period})["adr_pct"]
+
+
+def test_adr_pct_reference_values():
+    out = adr([110, 105, 104, 120], [100, 100, 100, 100])
+    assert out.iloc[:2].isna().all()  # short history: no value, never a shorter window
+    assert out.iloc[2] == pytest.approx(100 * ((1.10 + 1.05 + 1.04) / 3 - 1))
+    assert out.iloc[3] == pytest.approx(100 * ((1.05 + 1.04 + 1.20) / 3 - 1))
+
+
+def test_adr_pct_flat_and_bad_bars():
+    assert adr([100] * 4, [100] * 4).iloc[2:].tolist() == [0.0, 0.0]
+    out = adr([110, 110, 110, 110, 110], [100, 0, 100, 100, 100])  # zero low poisons its windows
+    assert out.iloc[2:4].isna().all() and out.iloc[4] == pytest.approx(10.0)
+    assert adr([110, np.nan, 110, 110], [100, 100, 100, 100]).iloc[2:].isna().all()

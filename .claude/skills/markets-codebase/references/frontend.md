@@ -54,8 +54,8 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `indicators/toChartSeries.ts` | `SERIES_SLOTS`, `isOverlay(name)`, `paramsLabel`, `toChartSeries(calc, slot, pane, colorOf)` |
 | `instruments/InstrumentPicker.tsx` | `InstrumentPicker({value, onChange, exchange, placeholder})` (debounced search) |
 | `market/CoverageTable.tsx`, `IngestPanel.tsx`, `IngestRunsTable.tsx` | Data page panels |
-| `scans/filterTree.ts` | `EMPTY_FILTER`, `OP_OPTIONS`, `newCondition`, `newGroup`, `prune`, `operandValue`/`operandFromValue`/`operandOptions` (select encoding `f:close`, `i:macd:signal`), `filterCodec` |
-| `scans/FilterBuilder.tsx` | `FilterBuilder({value, onChange})`: recursive group editor (all/any, max depth 3), condition rows with operand + params, value or operand on the right |
+| `scans/filterTree.ts` | `EMPTY_FILTER`, `OP_OPTIONS`, `newCondition`, `newGroup`, `prune` (also drops conditions with an invalid offset), `AGO_UNITS`/`MAX_AGO_BARS`/`agoError`/`conditionError`, `operandValue`/`operandFromValue`/`operandOptions` (select encoding `f:close`, `i:macd:signal`), `filterCodec` |
+| `scans/FilterBuilder.tsx` | `FilterBuilder({value, onChange})`: recursive group editor (all/any, max depth 3), condition rows with operand + params + `AgoInput` (number + d/w/m, empty = now) on each operand, value or operand on the right, offset error under the row |
 | `scans/SavedScans.tsx` | `SavedScans({current, definition, onLoad})`: load / save (upsert by name) / delete |
 | `scans/BasketPerformance.tsx` | `BasketPerformance({perf, loading, error, title})` card (basket, benchmark, difference, up/down, LineChart), `performanceColumns(perf, title)` (close at end + change since start), `performanceTitle`; data via `useScanPerformance` |
 | `scans/ScanResultsTable.tsx` | `ScanResultsTable({rows, extra, list, sort, onSortChange, empty, afterChange})` (`afterChange` columns go right after Change): base columns + one per operand used; row → chart with the rows (in shown order) as the side list named by `list` |

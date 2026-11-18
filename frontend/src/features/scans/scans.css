@@ -36,3 +36,40 @@
   color: var(--down);
   font-size: var(--text-xs);
 }
+
+.scan-condition-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scan-condition__error {
+  color: var(--down);
+  font-size: var(--text-xs);
+}
+
+/* "now" / "N w ago": kept small so an untouched offset barely shows. */
+.scan-ago {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.scan-ago__n {
+  width: 56px;
+  padding: 0 6px;
+  text-align: center;
+}
+.scan-ago__n::placeholder {
+  color: var(--text-muted);
+}
+.scan-ago__unit {
+  width: 82px;
+}
+.scan-ago--set .scan-ago__n,
+.scan-ago--set .scan-ago__unit {
+  border-color: var(--accent);
+  background-color: var(--accent-soft);
+}
+.scan-ago--error .scan-ago__n {
+  border-color: var(--down);
+}

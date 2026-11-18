@@ -97,10 +97,11 @@ daily bars for every watchlist member plus anything already stored. New instrume
 years of history. If `markets serve` is running (it holds the DuckDB lock) the command hands
 the job to the server instead.
 
-It runs on weekdays at 23:00 via Windows Task Scheduler (task "Markets nightly update",
+It runs on weekdays at 17:00 via Windows Task Scheduler (task "Markets nightly update",
 registered by `backend/scripts/register-nightly-task.ps1`). Output goes to
-`backend/logs/update-YYYY-MM-DD.log`. About 7 minutes for ~520 instruments, limited by
-Angel One's 80 requests/minute.
+`backend/logs/update-YYYY-MM-DD.log`. About 45-50 minutes for ~3,000 instruments, limited by
+Angel One's 80 requests/minute; data-quality checks run as its last step, and the audit
+scheduled task reviews the result at 19:00.
 
 ```bash
 powershell -ExecutionPolicy Bypass -File backend\scripts

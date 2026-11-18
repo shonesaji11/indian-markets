@@ -1,6 +1,6 @@
 ---
 name: audit
-description: Review the nightly market-data update and its data-quality (DQ) checks for this project, investigate new issues, record them in BOOK_OF_WORK.md and propose fixes for the user to approve. Use after the nightly update (it runs as a scheduled task at 00:30 Tue-Sat) or whenever the user asks about data quality, missing/bad bars, gaps, stale stocks, split-like jumps or failed downloads. Read-only on data and code.
+description: Review the nightly market-data update and its data-quality (DQ) checks for this project, investigate new issues, record them in BOOK_OF_WORK.md and propose fixes for the user to approve. Use after the nightly update (it runs as a scheduled task at 19:00 Mon-Fri, after the 17:00 update) or whenever the user asks about data quality, missing/bad bars, gaps, stale stocks, split-like jumps or failed downloads. Read-only on data and code.
 ---
 
 # Audit: nightly data-quality review
@@ -11,9 +11,9 @@ Project root: `C:\Users\shone\OneDrive\Documents\Coding\Python\Indian Markets`. 
 
 ## 1. Did the nightly update finish?
 
-The update runs at 23:00 on weekdays (`backend\scripts\nightly-update.ps1`) and logs to `backend\logs\update-YYYY-MM-DD.log` (one file per day; each run starts with `==== <time> nightly update starting`).
+The update runs at 17:00 on weekdays (`backend\scripts\nightly-update.ps1`, about 45-50 minutes) and logs to `backend\logs\update-YYYY-MM-DD.log` (one file per day; each run starts with `==== <time> nightly update starting`).
 
-- Open the log for the latest weekday run (yesterday's date when you run after midnight).
+- Open the log for the latest weekday run: today's date when you run in the evening as scheduled (if run on a weekend or before 17:00, the previous weekday's).
 - It must end with `==== <time> finished with exit code N`. If the starting line has no matching finished line, the update is still running or died: report that, with the last lines of the log, and stop. If the log file is missing, say the update didn't run.
 - Note the summary lines: `daily update: X/Y instruments ok, N failed`, errors (`error: ...`), and the data-quality lines (`data quality (incremental|full): ...` then one line per check with found/new/resolved).
 

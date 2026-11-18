@@ -1,13 +1,15 @@
 # Registers a Windows scheduled task that runs nightly-update.ps1 on weekdays.
-#   powershell -ExecutionPolicy Bypass -File scripts\register-nightly-task.ps1 [-At 23:00]
+#   powershell -ExecutionPolicy Bypass -File scripts\register-nightly-task.ps1 [-At 17:00]
 # Remove it with: Unregister-ScheduledTask -TaskName 'Markets nightly update'
 #
-# 23:00 leaves time for the run (about 7 minutes for ~500 instruments at Angel One's
-# 80 requests/minute) to finish before SmartAPI sessions expire at midnight. If the PC is
-# asleep at 23:00, the task runs as soon as it wakes (each run logs in fresh).
+# 17:00 is after NSE's 15:30 close and the closing price (set by ~15:35), so the day's bars are
+# ready for evening analysis. A run takes about 45-50 minutes for ~3,000 instruments at Angel
+# One's 80 requests/minute, finishing well before SmartAPI sessions expire at midnight. Each run
+# re-fetches the latest stored bar, so a bar that wasn't final yet is corrected by the next run.
+# If the PC is asleep at 17:00, the task runs as soon as it wakes (each run logs in fresh).
 
 param(
-    [string]$At = '23:00',
+    [string]$At = '17:00',
     [string]$TaskName = 'Markets nightly update'
 )
 

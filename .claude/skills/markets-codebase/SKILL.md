@@ -1,6 +1,6 @@
 ---
 name: markets-codebase
-description: Map of this repo (Indian markets dashboard; FastAPI + DuckDB backend in backend/src/markets, React + Vite frontend in frontend/src). Use BEFORE planning or making any code change, adding a feature, fixing a bug or answering "where is X / how does Y work" in this project, so you can jump to the exact file and symbol instead of reading whole files. Covers layers, data flow, where each concern lives, and recipes for adding indicators, scans, endpoints, tables, pages and components. Also the derived-data registry: what stored results (sector breadth, indicator values, DQ issues) must be rebuilt, and how, when bars, sector mappings, watchlists or calculation logic change or turn out wrong.
+description: Map of this repo (Indian markets dashboard; FastAPI + DuckDB backend in backend/src/markets, React + Vite frontend in frontend/src). Use BEFORE planning or making any code change, adding a feature, fixing a bug or answering "where is X / how does Y work" in this project, so you can jump to the exact file and symbol instead of reading whole files. Covers layers, data flow, where each concern lives, and recipes for adding indicators, scans, endpoints, tables, pages and components. Also the derived-data registry, which lists what stored results (sector breadth, indicator values, DQ issues) must be rebuilt, and how, when bars, sector mappings, watchlists or calculation logic change or turn out wrong.
 ---
 
 # Markets codebase map

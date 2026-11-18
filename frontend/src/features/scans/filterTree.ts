@@ -25,14 +25,25 @@ export const newGroup = (match: ScanGroup['match'] = 'any'): ScanGroup => ({ typ
 export const AGO_UNITS: Record<ScanAgo['unit'], number> = { d: 1, w: 5, m: 21 };
 export const MAX_AGO_BARS = 252;
 
-/** Message when an operand's offset is invalid, else null. */
-export function agoError(op: ScanOperand): string | null {
-  const ago = op.ago;
+/** Message when an offset is invalid, else null (no offset = now, which is valid). */
+export function agoValueError(ago: ScanAgo | undefined): string | null {
   if (!ago) return null;
   return Number.isInteger(ago.n) && ago.n >= 0 && ago.n * AGO_UNITS[ago.unit] <= MAX_AGO_BARS
     ? null
     : `Up to 12 months back (${MAX_AGO_BARS} sessions), whole numbers only.`;
 }
+
+/** Message when an operand's offset is invalid, else null. */
+export const agoError = (op: ScanOperand) => agoValueError(op.ago);
+
+/** "1w" <-> {n: 1, unit: 'w'}; '' or anything else = no offset. */
+export const agoCodec: UrlCodec<ScanAgo | undefined> = {
+  parse: (raw) => {
+    const m = /^(\d+)([dwm])$/.exec(raw);
+    return m ? { n: Number(m[1]), unit: m[2] as ScanAgo['unit'] } : undefined;
+  },
+  format: (ago) => (ago ? `${ago.n}${ago.unit}` : ''),
+};
 
 export const conditionError = (c: ScanCondition) => agoError(c.left) ?? (c.right.type === 'value' ? null : agoError(c.right));
 

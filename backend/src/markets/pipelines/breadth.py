@@ -6,11 +6,16 @@ from typing import Any, Optional, Sequence
 
 import pandas as pd
 
+from markets.engine.data_quality import trading_sessions
+from markets.engine.screener import ago_sessions
+from markets.pipelines.snapshots import records
 from markets.storage.duckdb.repositories import DuckBreadthRepository
 
 log = logging.getLogger(__name__)
 
 HISTORY_START = datetime(1990, 1, 1)
+ROTATION_WINDOW = 5  # sessions averaged on each side of a rotation comparison
+ROTATION_COLUMNS = ("industry", "stocks", "rank_now", "rank_then", "rank_change", "share_now", "share_then")
 
 
 class BreadthService:
@@ -66,6 +71,82 @@ class BreadthService:
 
         return {"as_of": day.isoformat(), "universe": universe, "periods": periods,
                 "sectors": _sector_rows(frame, periods)}
+
+    def rotation(self, universe: str, as_of: Optional[datetime] = None, period: int = 50,
+                 ago: Optional[dict[str, Any]] = None, min_stocks: int = 5) -> dict[str, Any]:
+        """Sector rotation: each sector's average daily rank by share of stocks above the `period` SMA
+        over the last ROTATION_WINDOW sessions, against the same average ending `ago` (default 1w)
+        earlier. See `rotation_rows`."""
+        ago = ago or {"n": 1, "unit": "w"}
+        lag = ago_sessions(ago)
+        if lag < 1:
+            raise ValueError("compare with at least one session back (1d to 12m)")
+        if period < 1 or min_stocks < 1:
+            raise ValueError("MA period and min stocks must be positive integers")
+        out: dict[str, Any] = {"as_of": None, "universe": universe, "period": period, "ago": ago,
+                               "window": ROTATION_WINDOW, "min_stocks": min_stocks, "windows": None,
+                               "hidden": 0, "sectors": []}
+        day = self.repo.latest_session(as_of or datetime.now())
+        if day is None:
+            return out
+        need = lag + ROTATION_WINDOW
+        # Calendar days that hold `need` sessions with room to spare (~1.45 calendar days per session).
+        frame = self._history(universe, period, day - timedelta(days=2 * need + 20), day, need)
+        if frame.empty:
+            return out
+        # Market sessions only: drops stray days where a handful of stocks have a bar.
+        sessions = trading_sessions(frame.groupby("ts")["stocks"].sum())
+        if len(sessions) < need:
+            raise ValueError(f"needs {need} sessions of breadth data; {len(sessions)} available")
+        sessions = sessions[-need:]
+        rows, hidden = rotation_rows(frame, sessions, lag, ROTATION_WINDOW, min_stocks)
+        out.update(
+            as_of=sessions[-1].isoformat(), hidden=hidden, sectors=records(rows, ROTATION_COLUMNS),
+            windows={"now": [sessions[-ROTATION_WINDOW].isoformat(), sessions[-1].isoformat()],
+                     "then": [sessions[0].isoformat(), sessions[-lag - 1].isoformat()]})
+        return out
+
+    def _history(self, universe: str, period: int, start: datetime, end: datetime, sessions: int) -> pd.DataFrame:
+        """Breadth rows for one period over [start, end]: stored rows when this universe and period are
+        stored and hold at least `sessions` days (the last day written through on first read, as in
+        `sectors`), otherwise computed live."""
+        if universe in self.universes and period in self.periods:
+            frame = self.repo.load_range(universe, period, start, end)
+            if frame.empty or frame["ts"].max() < end:
+                self.repo.store(universe, [period], end, end)
+                frame = self.repo.load_range(universe, period, start, end)
+            if frame["ts"].nunique() >= sessions:
+                return frame
+        return self.repo.compute(universe, [period], start, end)
+
+
+def rotation_rows(frame: pd.DataFrame, sessions: pd.DatetimeIndex, lag: int, window: int,
+                  min_stocks: int) -> tuple[pd.DataFrame, int]:
+    """Rank change per sector from daily breadth rows (`ts, industry, stocks, above`, one MA period).
+
+    Each session in `sessions`, sectors with at least `min_stocks` stocks that day are ranked by share
+    of stocks above the SMA (1 = highest; ties share the average rank). `rank_now` / `share_now` average
+    the last `window` sessions, `rank_then` / `share_then` the `window` sessions ending `lag` sessions
+    earlier, over the days the sector was ranked. `rank_change` = rank_then - rank_now, so positive means
+    climbing towards 1. Rows: sectors with `min_stocks` on the last session, sorted by rank_change
+    (missing last), then rank_now. Also returns how many smaller sectors were left out.
+    """
+    now_days = sessions[-window:]
+    then_days = sessions[-(lag + window):len(sessions) - lag]
+    df = frame[frame["ts"].isin(sessions) & (frame["stocks"] >= min_stocks)].copy()
+    df["share"] = df["above"] / df["stocks"]
+    df["rank"] = df.groupby("ts")["share"].rank(ascending=False, method="average")
+    now = df[df["ts"].isin(now_days)].groupby("industry")[["rank", "share"]].mean()
+    then = df[df["ts"].isin(then_days)].groupby("industry")[["rank", "share"]].mean()
+
+    last = frame[frame["ts"] == sessions[-1]].set_index("industry")["stocks"]
+    out = last[last >= min_stocks].rename("stocks").to_frame()
+    out["rank_now"], out["share_now"] = now["rank"], now["share"]
+    out["rank_then"], out["share_then"] = then["rank"], then["share"]
+    out["rank_change"] = out["rank_then"] - out["rank_now"]
+    out = out.rename_axis("industry").reset_index()
+    out = out.sort_values(["rank_change", "rank_now", "industry"], ascending=[False, True, True], na_position="last")
+    return out.reset_index(drop=True), int((last < min_stocks).sum())
 
 
 def _sector_rows(frame: pd.DataFrame, periods: Sequence[int]) -> list[dict[str, Any]]:

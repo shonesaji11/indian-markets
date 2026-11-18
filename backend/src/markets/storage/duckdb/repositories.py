@@ -651,6 +651,14 @@ class DuckBreadthRepository:
             [universe, ts, *periods],
         ).df()
 
+    def load_range(self, universe: str, period: int, start: datetime, end: datetime) -> pd.DataFrame:
+        """Stored rows of one MA period for every day in [start, end]."""
+        return self._db.cursor().execute(
+            "SELECT ts, universe, industry, ma_period, stocks, above FROM sector_breadth"
+            " WHERE universe = ? AND ma_period = ? AND ts BETWEEN ? AND ? ORDER BY ts, industry",
+            [universe, period, start, end],
+        ).df()
+
     @staticmethod
     def _sql(universe: str, periods: Sequence[int], start: datetime, end: datetime) -> tuple[str, list[Any]]:
         periods = sorted({int(p) for p in periods if int(p) > 0})

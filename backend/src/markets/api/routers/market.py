@@ -32,6 +32,19 @@ def sector_breadth(as_of: Optional[date] = None, universe: str = DEFAULT_UNIVERS
         raise HTTPException(422, str(exc))
 
 
+@router.get("/market/sector-rotation")
+def sector_rotation(as_of: Optional[date] = None, universe: str = DEFAULT_UNIVERSE, period: int = 50,
+                    ago_n: int = 1, ago_unit: str = "w", min_stocks: int = 5,
+                    c: Container = Depends(get_container)) -> dict:
+    """Per sector: average rank by share of stocks above the `period` SMA over the last 5 sessions
+    vs the 5 sessions ending `ago_n` days/weeks/months earlier."""
+    cutoff = datetime.combine(as_of, time.max) if as_of else None
+    try:
+        return c.breadth.rotation(universe, cutoff, period, {"n": ago_n, "unit": ago_unit}, min_stocks)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @router.post("/jobs/breadth")
 def breadth_job(backfill: bool = False, c: Container = Depends(get_container)) -> dict:
     """Recompute stored sector breadth: the last 10 days, or all history with `backfill`."""

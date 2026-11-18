@@ -1,14 +1,21 @@
 import { useNavigate } from 'react-router-dom';
-import { useMarketOverview, useSectorBreadth, useWatchlists } from '@/api/queries';
+import { useMarketOverview, useSectorBreadth, useSectorRotation, useWatchlists } from '@/api/queries';
 import type { MarketRow } from '@/api/types';
 import { Button, EmptyState, ErrorMessage, Field, PageHeader, Select, TextInput } from '@/components/ui';
 import { toListItems, useOpenChart } from '@/features/charts/chartList';
 import { BenchmarkTiles } from '@/features/overview/BenchmarkTiles';
 import { BreadthCard } from '@/features/overview/BreadthCard';
 import { ScanCard } from '@/features/overview/ScanCard';
-import { SectorBreadthCard } from '@/features/overview/SectorBreadthCard';
+import { SectorBreadthCard, type SectorMode } from '@/features/overview/SectorBreadthCard';
 import { SectorCard } from '@/features/overview/SectorCard';
-import { DEFAULT_MAS, STOCK_UNIVERSES, sectorHref } from '@/features/sectors/sectorLinks';
+import { agoCodec, agoValueError } from '@/features/scans/filterTree';
+import {
+  DEFAULT_MAS,
+  DEFAULT_ROTATION_AGO,
+  DEFAULT_ROTATION_MA,
+  STOCK_UNIVERSES,
+  sectorHref,
+} from '@/features/sectors/sectorLinks';
 import '@/features/overview/overview.css';
 import { intCodec, intListCodec, useUrlState } from '@/hooks/useUrlState';
 import { fmt } from '@/lib/format';
@@ -20,6 +27,10 @@ export function OverviewPage() {
   // Sector breadth settings live in the URL so Back from a sector page restores them.
   const [mas, setMas] = useUrlState('ma', DEFAULT_MAS, intListCodec);
   const [minStocks, setMinStocks] = useUrlState('min', 5, intCodec);
+  const [sectorView, setSectorView] = useUrlState('sector_view', 'latest');
+  const [rotationMa, setRotationMa] = useUrlState('rotation_ma', DEFAULT_ROTATION_MA, intCodec);
+  const [rotationAgo, setRotationAgo] = useUrlState('ago', DEFAULT_ROTATION_AGO, agoCodec);
+  const sectorMode: SectorMode = sectorView === 'rotation' ? 'rotation' : 'latest';
 
   const navigate = useNavigate();
 
@@ -27,6 +38,10 @@ export function OverviewPage() {
   const overview = useMarketOverview(universe, asOf || undefined);
   const periods = mas.length ? mas : DEFAULT_MAS;
   const breadth = useSectorBreadth(universe, periods, asOf || undefined);
+  const rotationPeriod = Math.max(1, rotationMa);
+  // An invalid look-back doesn't fetch, so the table keeps its last result under the hint.
+  const rotation = useSectorRotation(universe, rotationPeriod, rotationAgo, minStocks, asOf || undefined,
+    sectorMode === 'rotation' && !agoValueError(rotationAgo));
   const data = overview.data;
   const universeLabel = watchlists.find((w) => w.watchlist_id === universe)?.name ?? universe;
   const universeOptions = watchlists
@@ -77,14 +92,34 @@ export function OverviewPage() {
             <SectorCard rows={data?.sectors} onSelect={open('Sectors', data?.sectors)} />
           </div>
           <SectorBreadthCard
+            mode={sectorMode}
+            onModeChange={setSectorView}
             data={breadth.data}
             loading={breadth.isLoading}
             error={breadth.error}
             periods={periods}
             onPeriodsChange={setMas}
+            rotation={{
+              data: rotation.data,
+              loading: rotation.isLoading,
+              error: rotation.error,
+              period: rotationPeriod,
+              onPeriodChange: setRotationMa,
+              ago: rotationAgo,
+              onAgoChange: setRotationAgo,
+            }}
             minStocks={minStocks}
             onMinStocksChange={setMinStocks}
-            onSelect={(industry) => navigate(sectorHref(industry, { universe, asOf: asOf || undefined, mas: periods }))}
+            onSelect={(industry) =>
+              navigate(
+                sectorHref(industry, {
+                  universe,
+                  asOf: asOf || undefined,
+                  mas: periods,
+                  rotation: sectorMode === 'rotation' ? { period: rotationPeriod, ago: rotationAgo } : undefined,
+                }),
+              )
+            }
           />
           <div className="overview-scans">
             {data?.scans.map((s) => <ScanCard key={s.name} scan={s} onSelect={open(s.title, s.rows)} />)}

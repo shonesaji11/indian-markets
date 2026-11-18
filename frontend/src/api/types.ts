@@ -265,3 +265,33 @@ export interface SectorBreadth {
   periods: number[];
   sectors: SectorBreadthRow[];
 }
+
+/** One sector's average daily rank by share of stocks above the SMA (1 = best), now vs earlier. */
+export interface SectorRotationRow {
+  industry: string;
+  /** Stocks priced on the latest session. */
+  stocks: number;
+  rank_now: number;
+  /** Null when the sector wasn't ranked in the earlier window (too few stocks then, or new). */
+  rank_then: number | null;
+  /** rank_then − rank_now: positive = climbing towards rank 1. */
+  rank_change: number | null;
+  /** Average share above the SMA over each window (0..1). */
+  share_now: number;
+  share_then: number | null;
+}
+
+export interface SectorRotation {
+  as_of: string | null;
+  universe: string;
+  period: number;
+  ago: ScanAgo;
+  /** Sessions averaged on each side. */
+  window: number;
+  min_stocks: number;
+  /** First and last session of each window. */
+  windows: { now: [string, string]; then: [string, string] } | null;
+  /** Sectors left out for having fewer than min_stocks stocks. */
+  hidden: number;
+  sectors: SectorRotationRow[];
+}

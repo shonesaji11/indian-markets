@@ -21,6 +21,7 @@ import type {
   MarketOverview,
   ParamValue,
   SavedScan,
+  ScanAgo,
   ScanDefinition,
   ScanField,
   ScanPerformance,
@@ -28,6 +29,7 @@ import type {
   ScanRequest,
   ScanRunResult,
   SectorBreadth,
+  SectorRotation,
   Watchlist,
 } from './types';
 
@@ -212,6 +214,25 @@ export function useSectorBreadth(universe: string, periods: number[], asOf?: str
   return useQuery({
     queryKey: ['sector-breadth', universe, periods, asOf] as const,
     queryFn: () => http.get<SectorBreadth>('/market/sector-breadth', { universe, as_of: asOf, periods }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Sector rank change by share above the `period` SMA; disabled until `ago` is set (now isn't a comparison). */
+export function useSectorRotation(universe: string, period: number, ago: ScanAgo | undefined, minStocks: number,
+  asOf?: string, enabled = true) {
+  return useQuery({
+    queryKey: ['sector-rotation', universe, period, ago, minStocks, asOf] as const,
+    queryFn: () =>
+      http.get<SectorRotation>('/market/sector-rotation', {
+        universe,
+        as_of: asOf,
+        period,
+        ago_n: ago?.n,
+        ago_unit: ago?.unit,
+        min_stocks: minStocks,
+      }),
+    enabled: enabled && ago !== undefined,
     placeholderData: keepPreviousData,
   });
 }

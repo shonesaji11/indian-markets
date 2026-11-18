@@ -121,13 +121,18 @@ def validate(node: dict[str, Any], registry: IndicatorRegistry) -> None:
         raise ValueError(f"unknown node type {kind!r}")
 
 
+def ago_sessions(ago: Any) -> int:
+    """Sessions back for an `{"n": N, "unit": "d"|"w"|"m"}` offset; ValueError when it isn't valid."""
+    n = ago.get("n") if isinstance(ago, dict) else None
+    if (not isinstance(n, int) or isinstance(n, bool) or n < 0 or ago.get("unit") not in AGO_UNITS
+            or n * AGO_UNITS[ago["unit"]] > MAX_AGO_BARS):
+        raise ValueError(f"ago must be a whole number of d/w/m up to {MAX_AGO_BARS} sessions (12m)")
+    return n * AGO_UNITS[ago["unit"]]
+
+
 def _validate_operand(op: dict[str, Any], registry: IndicatorRegistry) -> None:
-    ago = op.get("ago")
-    if ago is not None:
-        n = ago.get("n") if isinstance(ago, dict) else None
-        if (not isinstance(n, int) or isinstance(n, bool) or n < 0 or ago.get("unit") not in AGO_UNITS
-                or n * AGO_UNITS[ago["unit"]] > MAX_AGO_BARS):
-            raise ValueError(f"ago must be a whole number of d/w/m up to {MAX_AGO_BARS} sessions (12m)")
+    if op.get("ago") is not None:
+        ago_sessions(op["ago"])
     if op.get("type") == "field":
         if op.get("field") not in FIELDS:
             raise ValueError(f"unknown field {op.get('field')!r}")

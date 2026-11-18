@@ -1,11 +1,10 @@
 import { useIndicators, useScanFields } from '@/api/queries';
-import type { IndicatorInfo, ScanAgo, ScanCondition, ScanField, ScanGroup, ScanOperand } from '@/api/types';
+import type { IndicatorInfo, ScanCondition, ScanField, ScanGroup, ScanOperand } from '@/api/types';
 import { Button, SegmentedControl, Select, TextInput } from '@/components/ui';
 import { ParamInputs } from '@/features/indicators/ParamInputs';
+import { AgoInput } from './AgoInput';
 import {
-  AGO_UNITS,
   OP_OPTIONS,
-  agoError,
   conditionError,
   newCondition,
   newGroup,
@@ -166,7 +165,7 @@ function ConditionRow({ cond, onChange, onRemove, catalog }: ConditionRowProps) 
             {right.type === 'indicator' && (
               <IndicatorParams operand={right} onChange={(r) => onChange({ ...cond, right: r })} catalog={catalog} />
             )}
-            <AgoInput operand={right} onChange={(r) => onChange({ ...cond, right: r })} />
+            <AgoInput value={right.ago} onChange={(ago) => onChange({ ...cond, right: { ...right, ago } })} />
           </>
         )}
         <div style={{ flex: 1 }} />
@@ -183,45 +182,6 @@ function ConditionRow({ cond, onChange, onRemove, catalog }: ConditionRowProps) 
       </div>
       {error && <div className="scan-condition__error">{error}</div>}
     </div>
-  );
-}
-
-const UNIT_OPTIONS = (Object.keys(AGO_UNITS) as ScanAgo['unit'][]).map((u) => ({ value: u, label: `${u} ago` }));
-
-/** "now", or N d/w/m ago. Clearing the number (or 0) means now. */
-function AgoInput({ operand, onChange }: { operand: ScanOperand; onChange: (o: ScanOperand) => void }) {
-  const ago = operand.ago;
-  const set = (next: ScanAgo | undefined) => onChange({ ...operand, ago: next && next.n !== 0 ? next : undefined });
-  const sessions = ago ? ago.n * AGO_UNITS[ago.unit] : 0;
-  return (
-    <span
-      className={`scan-ago${ago ? ' scan-ago--set' : ''}${agoError(operand) ? ' scan-ago--error' : ''}`}
-      title={
-        ago
-          ? `= ${sessions} trading session${sessions === 1 ? '' : 's'} back`
-          : 'Value on the scan day; enter a number to look back'
-      }
-    >
-      <TextInput
-        type="number"
-        min={0}
-        step={1}
-        className="scan-ago__n"
-        placeholder="now"
-        value={ago?.n ?? ''}
-        onChange={(e) => set(e.target.value === '' ? undefined : { n: Number(e.target.value), unit: ago?.unit ?? 'd' })}
-        aria-label="How far back"
-      />
-      {ago && (
-        <Select
-          value={ago.unit}
-          options={UNIT_OPTIONS}
-          onChange={(unit) => set({ ...ago, unit })}
-          className="scan-ago__unit"
-          aria-label="Unit"
-        />
-      )}
-    </span>
   );
 }
 
@@ -243,7 +203,7 @@ function OperandEditor({
         aria-label="Field or indicator"
       />
       {operand.type === 'indicator' && <IndicatorParams operand={operand} onChange={onChange} catalog={catalog} />}
-      <AgoInput operand={operand} onChange={onChange} />
+      <AgoInput value={operand.ago} onChange={(ago) => onChange({ ...operand, ago })} />
     </>
   );
 }

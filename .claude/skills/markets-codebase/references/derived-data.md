@@ -12,7 +12,7 @@ Commands run from `backend/` (`.venv\Scripts\markets.exe ...`). When `markets se
 ## Stored derived data
 
 ### 1. `sector_breadth` (sector breadth per day)
-- **Writer:** `DuckBreadthRepository.store` (`storage/duckdb/repositories.py`), called by `BreadthService.update` (nightly, last 10 calendar days), `BreadthService.backfill` (all history) and `BreadthService.sectors` (first read of a day for a stored period).
+- **Writer:** `DuckBreadthRepository.store` (`storage/duckdb/repositories.py`), called by `BreadthService.update` (nightly, last 10 calendar days), `BreadthService.backfill` (all history), and on the first read of a day for a stored period by `BreadthService.sectors` and `BreadthService.rotation` (which also reads stored history for its comparison windows).
 - **Scope:** universes `BREADTH_UNIVERSES` × MA periods `BREADTH_PERIODS` (`universes.py`). Other periods are computed live, never stored.
 - **Inputs:** `candles` (1d close), `instruments.instrument_type` (EQ only), `instrument_tags` key `industry`, `watchlist_members` (point-in-time membership; days before a watchlist's first sync use its *current* members), the SQL in `DuckBreadthRepository._sql`.
 - **No version guard:** changing the SQL does not invalidate stored rows. Any logic change needs a full rebuild.

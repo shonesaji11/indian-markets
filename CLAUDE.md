@@ -15,6 +15,7 @@
 - Think through edge cases up front (empty/missing data, holidays and gaps, timezones, rate limits, partial failures) and discuss them with me before coding.
 - When requirements are ambiguous, ask me instead of guessing. Trivial fixes (typos, one-line bugs) don't need a plan; just do them.
 - Book of work: anything left unresolved (an ambiguity we park, a known limitation, a bug outside the task, an idea for later) goes into `BOOK_OF_WORK.md` in the right section, dated, with the options considered and the current behaviour. Check it before working in an area, and delete items once they're resolved.
+- The book of work holds only things still to do or decide. Before every commit, re-read the items in the areas the work touched: delete any it resolved (git history keeps the record), and cut partly resolved ones down to what's left. Never leave an entry that only describes finished work.
 
 ## Code style
 - Keep code simple and concise. Prefer the smallest change that solves the problem over a larger refactor, as long as speed doesn't suffer.
@@ -39,6 +40,11 @@
 - Whenever a new calculation (indicator, scan, SQL column/macro, breadth or screener logic) or feature is added or changed, add tests for it: reference values for correctness, plus the data-quality edge cases (short history, gaps, zero/NaN price or volume, flat prices, unsorted/duplicate bars, stale instruments).
 - Then run the full backend test suite (`pytest` in `backend/`), not just the new tests, and fix every failure before calling the work done.
 - If a failure or an edge case has no obvious right answer, don't pick one silently. Explain the issue and its context, lay out a few possible solutions with their trade-offs and your recommendation, then wait for my decision and implement what I choose.
+
+## Derived data and rebuilds (very important)
+- Every stored computed result (sector breadth, indicator values, DQ issues, and anything added later) is listed in `.claude/skills/markets-codebase/references/derived-data.md` with its inputs and rebuild command.
+- Any code that saves computed results (a new table filled from other tables, a cache, an output file, or a new writer to an existing one) must add or update its section there in the same change. Prefer a version guard and a rebuild command over relying on someone remembering.
+- Whenever an input changes or turns out wrong (re-downloaded or corrected bars, split fixes, sector mapping or watchlist changes, a logic change in a calculation), or a log, error, DQ issue or my message points to one, check that file and run (or, in the audit, propose) the matching rebuild. Say which rebuilds ran.
 
 ## Before every commit: secret checks and message
 - Commit message: a summary of the changes made. A short subject line naming the change, then a body listing what changed and where (features, files/areas, docs), in plain words.

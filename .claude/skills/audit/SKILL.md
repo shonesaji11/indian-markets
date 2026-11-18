@@ -60,7 +60,7 @@ Keep it short and phone-readable:
 
 1. Update status: finished at <time>, X/Y ok, N failed (and why).
 2. DQ summary: open issues per check; new tonight; resolved tonight.
-3. New groups needing attention, each with likely cause and the proposed fix (e.g. "re-download TCS 1–31 Mar: `markets ingest NSE:TCS-EQ --start 2024-03-01 --end 2024-03-31`").
+3. New groups needing attention, each with likely cause and the proposed fix (e.g. "re-download TCS 1–31 Mar: `markets ingest NSE:TCS-EQ --start 2024-03-01 --end 2024-03-31`"). Any fix that changes bars, mappings or watchlists also lists the rebuilds it needs from `markets-codebase/references/derived-data.md` (e.g. "then `markets breadth --backfill`, since the bars are older than 10 days").
 4. Issues that look fine to accept, each with the exact command for the user to run or approve: `markets dq accept <issue_id> --note "<why>"`.
 5. Anything that needs the user's decision.
 

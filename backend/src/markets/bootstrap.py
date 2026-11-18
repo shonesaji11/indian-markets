@@ -16,14 +16,17 @@ from markets.pipelines.breadth import BreadthService
 from markets.pipelines.compute import CalcService
 from markets.pipelines.daily_update import DailyUpdateService
 from markets.pipelines.data_quality import DataQualityService
+from markets.pipelines.highs import AthService
 from markets.pipelines.ingest import IngestionService
 from markets.pipelines.market_overview import MarketOverviewService
+from markets.pipelines.repair import RepairService
 from markets.pipelines.screener import ScreenerService
 from markets.pipelines.watchlists import WatchlistService
 from markets.providers import build_provider
 from markets.sources.nse_indices import NseIndexSource
 from markets.storage.duckdb import (
     Database,
+    DuckAthRepository,
     DuckBreadthRepository,
     DuckCalcRepository,
     DuckCandleRepository,
@@ -59,7 +62,9 @@ class Container:
     overview: MarketOverviewService
     screener: ScreenerService
     breadth: BreadthService
+    ath: AthService
     data_quality: DataQualityService
+    repair: RepairService
 
     def close(self) -> None:
         self.provider.close()
@@ -86,8 +91,12 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
 
     ingestion = IngestionService(provider, instruments, candles, ingestion_log)
     watchlist_sync = WatchlistService(watchlist_specs, watchlists, instruments, constituents or NseIndexSource(), provider)
-    breadth = BreadthService(DuckBreadthRepository(db), BREADTH_UNIVERSES, BREADTH_PERIODS)
-    data_quality = DataQualityService(DuckDataQualityRepository(db), watchlists)
+    ath_repo = DuckAthRepository(db)
+    ath = AthService(ath_repo)
+    breadth = BreadthService(DuckBreadthRepository(db), BREADTH_UNIVERSES, BREADTH_PERIODS, ath)
+    dq_repo = DuckDataQualityRepository(db)
+    data_quality = DataQualityService(dq_repo, watchlists)
+    repair = RepairService(dq_repo, candles, calcs, ingestion, watchlists, ath_repo)
     benchmarks = next((s.members for s in watchlist_specs if s.watchlist_id == "benchmarks"), ())
 
     return Container(
@@ -106,10 +115,12 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
         calc_service=CalcService(registry, candles, calcs),
         watchlist_sync=watchlist_sync,
         daily_update=DailyUpdateService(ingestion, watchlist_sync, watchlists, market, breadth,
-                                        data_quality=data_quality),
+                                        data_quality=data_quality, ath=ath, repair=repair),
         overview=MarketOverviewService(market, watchlists, benchmarks),
         breadth=breadth,
+        ath=ath,
         data_quality=data_quality,
+        repair=repair,
         screener=ScreenerService(registry, market, watchlists, DuckSavedScanRepository(db), instruments,
                                  *benchmarks[:1]),
     )

@@ -5,13 +5,16 @@ import { SectorStocksPanel, type StocksView } from '@/features/sectors/SectorSto
 import { agoCodec } from '@/features/scans/filterTree';
 import {
   DEFAULT_MAS,
+  DEFAULT_NEAR,
   DEFAULT_ROTATION_AGO,
   DEFAULT_ROTATION_MA,
   DEFAULT_SECTOR_SORT,
   DEFAULT_UNIVERSE,
   overviewHref,
+  toHighBasis,
+  toRankBy,
 } from '@/features/sectors/sectorLinks';
-import { intCodec, intListCodec, useUrlState } from '@/hooks/useUrlState';
+import { intCodec, intListCodec, numberCodec, useUrlState } from '@/hooks/useUrlState';
 
 /** One sector's stocks (opened from the Overview's Sector breadth card). Everything is in the URL. */
 export function SectorPage() {
@@ -23,6 +26,10 @@ export function SectorPage() {
   const [sectorView] = useUrlState('sector_view', 'latest');
   const [rotationMa] = useUrlState('rotation_ma', DEFAULT_ROTATION_MA, intCodec);
   const [rotationAgo] = useUrlState('ago', DEFAULT_ROTATION_AGO, agoCodec);
+  const [rankBy] = useUrlState('rank_by', 'ma');
+  // Near-high settings aren't used here; they're only carried back to the Overview.
+  const [nearPct] = useUrlState('near_pct', DEFAULT_NEAR.pct, numberCodec);
+  const [nearBasis] = useUrlState('near_basis', DEFAULT_NEAR.basis);
   const [view, setView] = useUrlState('view', 'table');
   const [page, setPage] = useUrlState('page', 1, intCodec);
   const [sort, setSort] = useUrlState('sort', DEFAULT_SECTOR_SORT, sortCodec);
@@ -32,7 +39,9 @@ export function SectorPage() {
   const universeLabel =
     universe === 'all' ? 'All tracked' : (watchlists.find((w) => w.watchlist_id === universe)?.name ?? universe);
   const overviewMas = mas.length ? mas : DEFAULT_MAS;
-  const rotation = sectorView === 'rotation' ? { period: Math.max(1, rotationMa), ago: rotationAgo } : undefined;
+  const rotation =
+    sectorView === 'rotation' ? { rankBy: toRankBy(rankBy), period: Math.max(1, rotationMa), ago: rotationAgo } : undefined;
+  const near = { pct: nearPct, basis: toHighBasis(nearBasis) };
   const periods = rotation ? [rotation.period] : overviewMas;
 
   if (!industry) {
@@ -53,7 +62,7 @@ export function SectorPage() {
             <Field label="As of">
               <TextInput type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
             </Field>
-            <Button onClick={() => navigate(overviewHref({ universe, asOf: asOf || undefined, mas: overviewMas, rotation }))}>
+            <Button onClick={() => navigate(overviewHref({ universe, asOf: asOf || undefined, mas: overviewMas, near, rotation }))}>
               All sectors
             </Button>
           </>

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMarketOverview, useSectorBreadth, useSectorRotation, useWatchlists } from '@/api/queries';
 import type { MarketRow } from '@/api/types';
@@ -11,13 +12,16 @@ import { SectorCard } from '@/features/overview/SectorCard';
 import { agoCodec, agoValueError } from '@/features/scans/filterTree';
 import {
   DEFAULT_MAS,
+  DEFAULT_NEAR,
   DEFAULT_ROTATION_AGO,
   DEFAULT_ROTATION_MA,
   STOCK_UNIVERSES,
   sectorHref,
+  toHighBasis,
+  toRankBy,
 } from '@/features/sectors/sectorLinks';
 import '@/features/overview/overview.css';
-import { intCodec, intListCodec, useUrlState } from '@/hooks/useUrlState';
+import { intCodec, intListCodec, numberCodec, useUrlState, useUrlUpdate } from '@/hooks/useUrlState';
 import { fmt } from '@/lib/format';
 
 
@@ -30,17 +34,32 @@ export function OverviewPage() {
   const [sectorView, setSectorView] = useUrlState('sector_view', 'latest');
   const [rotationMa, setRotationMa] = useUrlState('rotation_ma', DEFAULT_ROTATION_MA, intCodec);
   const [rotationAgo, setRotationAgo] = useUrlState('ago', DEFAULT_ROTATION_AGO, agoCodec);
+  const [rankByRaw, setRankBy] = useUrlState('rank_by', 'ma');
+  const [nearPct] = useUrlState('near_pct', DEFAULT_NEAR.pct, numberCodec);
+  const [nearBasis] = useUrlState('near_basis', DEFAULT_NEAR.basis);
   const sectorMode: SectorMode = sectorView === 'rotation' ? 'rotation' : 'latest';
+  const rankBy = toRankBy(rankByRaw);
+  const near = useMemo(
+    () => ({ pct: nearPct > 0 && nearPct < 100 ? nearPct : DEFAULT_NEAR.pct, basis: toHighBasis(nearBasis) }),
+    [nearPct, nearBasis],
+  );
+  // Both near-high params change together in one history update.
+  const updateUrl = useUrlUpdate();
+  const setNear = (next: { pct: number; basis: string }) =>
+    updateUrl({
+      near_pct: next.pct === DEFAULT_NEAR.pct ? undefined : String(next.pct),
+      near_basis: next.basis === DEFAULT_NEAR.basis ? undefined : next.basis,
+    });
 
   const navigate = useNavigate();
 
   const { data: watchlists = [] } = useWatchlists();
   const overview = useMarketOverview(universe, asOf || undefined);
   const periods = mas.length ? mas : DEFAULT_MAS;
-  const breadth = useSectorBreadth(universe, periods, asOf || undefined);
+  const breadth = useSectorBreadth(universe, periods, near, asOf || undefined);
   const rotationPeriod = Math.max(1, rotationMa);
   // An invalid look-back doesn't fetch, so the table keeps its last result under the hint.
-  const rotation = useSectorRotation(universe, rotationPeriod, rotationAgo, minStocks, asOf || undefined,
+  const rotation = useSectorRotation(universe, rankBy, rotationPeriod, near, rotationAgo, minStocks, asOf || undefined,
     sectorMode === 'rotation' && !agoValueError(rotationAgo));
   const data = overview.data;
   const universeLabel = watchlists.find((w) => w.watchlist_id === universe)?.name ?? universe;
@@ -99,10 +118,14 @@ export function OverviewPage() {
             error={breadth.error}
             periods={periods}
             onPeriodsChange={setMas}
+            near={near}
+            onNearChange={setNear}
             rotation={{
               data: rotation.data,
               loading: rotation.isLoading,
               error: rotation.error,
+              rankBy,
+              onRankByChange: setRankBy,
               period: rotationPeriod,
               onPeriodChange: setRotationMa,
               ago: rotationAgo,
@@ -116,7 +139,8 @@ export function OverviewPage() {
                   universe,
                   asOf: asOf || undefined,
                   mas: periods,
-                  rotation: sectorMode === 'rotation' ? { period: rotationPeriod, ago: rotationAgo } : undefined,
+                  near,
+                  rotation: sectorMode === 'rotation' ? { rankBy, period: rotationPeriod, ago: rotationAgo } : undefined,
                 }),
               )
             }

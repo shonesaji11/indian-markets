@@ -1,4 +1,4 @@
-import type { ScanAgo } from '@/api/types';
+import type { HighBasis, NearHigh, RankBy, ScanAgo } from '@/api/types';
 import type { SortState } from '@/components/ui';
 import { agoCodec } from '@/features/scans/filterTree';
 import { intListCodec } from '@/hooks/useUrlState';
@@ -10,23 +10,34 @@ export const DEFAULT_MAS = [10, 20];
 export const DEFAULT_SECTOR_SORT: SortState = { key: 'pct_change', desc: true };
 export const DEFAULT_ROTATION_MA = 50;
 export const DEFAULT_ROTATION_AGO: ScanAgo = { n: 1, unit: 'w' };
+export const DEFAULT_NEAR: NearHigh = { pct: 10, basis: '52w' };
+
+/** URL value -> HighBasis (anything else = the default). */
+export const toHighBasis = (raw: string): HighBasis => (raw === 'ath' ? 'ath' : '52w');
+/** URL value -> RankBy (anything else = by MA). */
+export const toRankBy = (raw: string): RankBy => (raw === 'near_high' ? 'near_high' : 'ma');
 
 interface SectorContext {
   universe: string;
   asOf?: string;
   mas: number[];
+  /** The card's near-high settings (column and "Near high" ranking). */
+  near: NearHigh;
   /** Set while the Overview's Sector breadth card is in Rotation view. */
-  rotation?: { period: number; ago: ScanAgo | undefined };
+  rotation?: { rankBy: RankBy; period: number; ago: ScanAgo | undefined };
 }
 
-/** Query string carrying universe, date, MA periods and the rotation view between the Overview and a sector page. */
-function contextParams({ universe, asOf, mas, rotation }: SectorContext): URLSearchParams {
+/** Query string carrying universe, date, MA periods, near-high settings and the rotation view between the Overview and a sector page. */
+function contextParams({ universe, asOf, mas, near, rotation }: SectorContext): URLSearchParams {
   const params = new URLSearchParams();
   if (universe !== DEFAULT_UNIVERSE) params.set('universe', universe);
   if (asOf) params.set('as_of', asOf);
   if (intListCodec.format(mas) !== intListCodec.format(DEFAULT_MAS)) params.set('ma', intListCodec.format(mas));
+  if (near.pct !== DEFAULT_NEAR.pct) params.set('near_pct', String(near.pct));
+  if (near.basis !== DEFAULT_NEAR.basis) params.set('near_basis', near.basis);
   if (rotation) {
     params.set('sector_view', 'rotation');
+    if (rotation.rankBy !== 'ma') params.set('rank_by', rotation.rankBy);
     if (rotation.period !== DEFAULT_ROTATION_MA) params.set('rotation_ma', String(rotation.period));
     const ago = agoCodec.format(rotation.ago);
     if (ago !== agoCodec.format(DEFAULT_ROTATION_AGO)) params.set('ago', ago);

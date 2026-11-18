@@ -38,6 +38,38 @@ def _records(cur, sql: str, params: Sequence[Any] = ()) -> list[dict[str, Any]]:
     return [dict(zip(cols, row)) for row in result.fetchall()]
 
 
+# Run state (key/value) and change tracking shared by the jobs that follow candles incrementally:
+# data-quality checks (dq_state) and derived tables (derived_state).
+
+def _get_state(db: Database, table: str, key: str) -> Optional[str]:
+    row = db.cursor().execute(f"SELECT value FROM {table} WHERE key = ?", [key]).fetchone()
+    return row[0] if row else None
+
+
+def _set_state(db: Database, table: str, key: str, value: str) -> None:
+    db.cursor().execute(f"INSERT OR REPLACE INTO {table} VALUES (?, ?, current_timestamp)", [key, value])
+
+
+def _max_daily_ingested_at(db: Database) -> Optional[datetime]:
+    return db.cursor().execute("SELECT max(ingested_at) FROM candles WHERE timeframe = '1d'").fetchone()[0]
+
+
+def _daily_changed_since(db: Database, watermark: Optional[datetime],
+                         instrument_ids: Optional[Sequence[int]] = None) -> pd.DataFrame:
+    """instrument_id, from_ts: instruments with daily bars ingested after `watermark` and the
+    earliest such bar (every instrument from its first bar when `watermark` is None)."""
+    where, params = ["timeframe = '1d'"], []
+    if watermark is not None:
+        where.append("ingested_at > ?")
+        params.append(watermark)
+    if instrument_ids is not None:
+        where.append(f"instrument_id IN ({','.join('?' * len(instrument_ids))})" if instrument_ids else "FALSE")
+        params.extend(instrument_ids)
+    return db.cursor().execute(
+        f"SELECT instrument_id, min(ts) AS from_ts FROM candles WHERE {' AND '.join(where)} GROUP BY 1",
+        params).df()
+
+
 class DuckInstrumentRepository:
     def __init__(self, db: Database):
         self._db = db
@@ -131,13 +163,14 @@ class DuckInstrumentRepository:
 
     def equity_tokens(self, exchange: str, series: Sequence[str], provider: str) -> pd.DataFrame:
         """Equities on `exchange` whose symbol ends in -<series> (e.g. RELIANCE-EQ), with provider tokens.
-        Columns: instrument_id, token."""
+        Columns: instrument_id, token. NSE's dummy test symbols (e.g. 011NSETEST-EQ) are left out."""
         pattern = f"-({'|'.join(series)})$"
         return self._db.cursor().execute(
             """
             SELECT i.instrument_id, m.provider_token AS token
             FROM instruments i JOIN instrument_provider_map m USING (instrument_id)
             WHERE i.exchange = ? AND i.instrument_type = 'EQ' AND m.provider = ? AND regexp_matches(i.symbol, ?)
+              AND i.symbol NOT LIKE '%NSETEST%'
             ORDER BY i.instrument_id
             """,
             [exchange, provider, pattern],
@@ -188,6 +221,21 @@ class DuckCandleRepository:
             ).fetchone()[0]
             cur.unregister("incoming")
         return int(written)
+
+    def remove_bad_bars(self, instrument_id: int, interval: Interval, start: datetime, end: datetime) -> list[datetime]:
+        """Delete bars in [start, end] with a missing, zero or negative open/high/low/close, or high below
+        low, after copying them to candle_revisions (so the removal is traceable). Returns their ts."""
+        valid = " AND ".join(f"coalesce(isfinite({c}) AND {c} > 0, FALSE)" for c in ("open", "high", "low", "close"))
+        where = f"instrument_id = ? AND timeframe = ? AND ts BETWEEN ? AND ? AND NOT ({valid} AND high >= low)"
+        params = [instrument_id, interval.value, start, end]
+        with self._db.transaction() as cur:
+            ts = [r[0] for r in cur.execute(f"SELECT ts FROM candles WHERE {where} ORDER BY ts", params).fetchall()]
+            if ts:
+                cur.execute(
+                    "INSERT INTO candle_revisions SELECT instrument_id, timeframe, ts, open, high, low, close, volume,"
+                    f" source, ingested_at, current_timestamp FROM candles WHERE {where}", params)
+                cur.execute(f"DELETE FROM candles WHERE {where}", params)
+        return ts
 
     def load(self, instrument_id: int, interval: Interval, start: Optional[datetime] = None,
              end: Optional[datetime] = None) -> pd.DataFrame:
@@ -354,6 +402,15 @@ class DuckCalcRepository:
             )
             cur.unregister("incoming")
         return len(long)
+
+    def delete_values_at(self, instrument_id: int, interval: Interval, ts: Sequence[datetime]) -> int:
+        """Remove stored indicator values of every calculation at these bars (e.g. bars that were removed)."""
+        if not ts:
+            return 0
+        marks = ",".join("?" * len(ts))
+        return self._db.cursor().execute(
+            f"DELETE FROM calc_values WHERE instrument_id = ? AND timeframe = ? AND ts IN ({marks})",
+            [instrument_id, interval.value, *ts]).fetchone()[0]
 
     def load_values(self, calc_id: str, instrument_id: int, interval: Interval,
                     start: Optional[datetime] = None, end: Optional[datetime] = None) -> pd.DataFrame:
@@ -750,11 +807,16 @@ class DuckBreadthRepository:
         return self._db.cursor().execute(sql, params).df()
 
     def store(self, universe: str, periods: Sequence[int], start: datetime, end: datetime) -> int:
-        """Compute and upsert into sector_breadth; returns rows written."""
+        """Compute and replace sector_breadth rows of these periods for [start, end] (rows that no longer
+        exist, e.g. a sector whose only stock lost its bar that day, are dropped); returns rows written."""
         sql, params = self._sql(universe, periods, start, end)
+        periods = sorted({int(p) for p in periods})
         with self._db.transaction() as cur:
             cur.execute(f"CREATE TEMP TABLE _breadth AS {sql}", params)
             n = cur.execute("SELECT count(*) FROM _breadth").fetchone()[0]
+            cur.execute(
+                f"DELETE FROM sector_breadth WHERE universe = ? AND ma_period IN ({','.join('?' * len(periods))})"
+                " AND ts BETWEEN ? AND ?", [universe, *periods, start, end])
             cur.execute(
                 "INSERT OR REPLACE INTO sector_breadth (ts, universe, industry, ma_period, stocks, above)"
                 " SELECT ts, universe, industry, ma_period, stocks, above FROM _breadth")
@@ -771,6 +833,22 @@ class DuckBreadthRepository:
             [universe, ts, *periods],
         ).df()
 
+    def get_state(self, key: str) -> Optional[str]:
+        return _get_state(self._db, "derived_state", key)
+
+    def set_state(self, key: str, value: str) -> None:
+        _set_state(self._db, "derived_state", key, value)
+
+    def max_ingested_at(self) -> Optional[datetime]:
+        return _max_daily_ingested_at(self._db)
+
+    def earliest_changed_bar(self, watermark: Optional[datetime]) -> Optional[datetime]:
+        """Earliest daily bar (re)ingested after `watermark` (None = no watermark yet: nothing to catch up)."""
+        if watermark is None:
+            return None
+        changed = _daily_changed_since(self._db, watermark)
+        return None if changed.empty else changed["from_ts"].min().to_pydatetime()
+
     def load_range(self, universe: str, period: int, start: datetime, end: datetime) -> pd.DataFrame:
         """Stored rows of one MA period for every day in [start, end]."""
         return self._db.cursor().execute(
@@ -779,13 +857,36 @@ class DuckBreadthRepository:
             [universe, period, start, end],
         ).df()
 
+    def near_high(self, universe: str, basis: str, pct: float, start: datetime, end: datetime) -> pd.DataFrame:
+        """Columns: ts, universe, industry, stocks, above. Per sector and day: stocks with a reference
+        high (`stocks`) and how many closed within `pct` (a fraction, 0.10 = 10%) of it (`above`).
+        `basis` '52w': highest high of the last 252 bars, or of all bars when a stock has fewer;
+        'ath': highest high since the first stored bar, read from daily_ath (refresh it first).
+        Zero/NaN highs are skipped; a bar with a non-finite close doesn't count that day."""
+        if basis == "52w":
+            lookback = 2 * 252 + 20
+            per_bar = ("SELECT instrument_id, ts, close, max(CASE WHEN isfinite(high) AND high > 0 THEN high END)"
+                       " OVER (PARTITION BY instrument_id ORDER BY ts ROWS BETWEEN 251 PRECEDING AND CURRENT ROW)"
+                       " AS ref FROM bars")
+        elif basis == "ath":
+            lookback = 1
+            per_bar = "SELECT b.instrument_id, b.ts, b.close, a.ath AS ref FROM bars b LEFT JOIN daily_ath a USING (instrument_id, ts)"
+        else:
+            raise ValueError(f"unknown high basis {basis!r}; expected '52w' or 'ath'")
+        sql, params = self._scoped(universe, start, end, lookback, per_bar)
+        sql += """
+            SELECT ts, ? AS universe, industry, count(*) AS stocks,
+                   count(*) FILTER (WHERE close >= ref * (1 - ?)) AS above
+            FROM scoped WHERE isfinite(ref) AND ref > 0 AND isfinite(close)
+            GROUP BY ts, industry
+        """
+        return self._db.cursor().execute(sql, [*params, universe, pct]).df()
+
     @staticmethod
     def _sql(universe: str, periods: Sequence[int], start: datetime, end: datetime) -> tuple[str, list[Any]]:
         periods = sorted({int(p) for p in periods if int(p) > 0})
         if not periods:
             raise ValueError("at least one positive MA period is required")
-        # Enough calendar days before `start` to fill the longest window (~1.45 calendar days per bar).
-        lookback = 2 * max(periods) + 20
         smas = ",\n".join(
             f"avg(close) OVER (PARTITION BY instrument_id ORDER BY ts ROWS BETWEEN {p - 1} PRECEDING"
             f" AND CURRENT ROW) AS sma_{p}" for p in periods)
@@ -793,6 +894,18 @@ class DuckBreadthRepository:
             f"SELECT ts, ? AS universe, industry, {p} AS ma_period, count(*) AS stocks,"
             f" count(*) FILTER (WHERE close > sma_{p}) AS above FROM scoped GROUP BY ts, industry"
             for p in periods)
+        # Enough calendar days before `start` to fill the longest window (~1.45 calendar days per bar).
+        sql, params = DuckBreadthRepository._scoped(
+            universe, start, end, 2 * max(periods) + 20, f"SELECT instrument_id, ts, close, {smas} FROM bars")
+        return sql + counts, [*params, *([universe] * len(periods))]
+
+    @staticmethod
+    def _scoped(universe: str, start: datetime, end: datetime, lookback_days: int,
+                per_bar: str) -> tuple[str, list[Any]]:
+        """WITH clause shared by the breadth queries, ending in `scoped`: daily equity bars
+        (`bars`: instrument_id, ts, high, close) from `lookback_days` calendar days before `start` to
+        `end`; `per_bar`, a SELECT over `bars` adding per-bar columns (window SMAs, reference highs);
+        then rows from `start` on for the universe's members that day, with their industry."""
         if universe == "all":
             membership, member_params = "TRUE", []
         else:
@@ -809,22 +922,80 @@ class DuckBreadthRepository:
                 FROM watchlist_members WHERE watchlist_id = ?
             ),
             bars AS (
-                SELECT c.instrument_id, c.ts, c.close
+                SELECT c.instrument_id, c.ts, c.high, c.close
                 FROM candles c JOIN instruments i USING (instrument_id)
                 WHERE c.timeframe = '1d' AND i.instrument_type = 'EQ'
-                  AND c.ts <= ? AND c.ts > CAST(? AS TIMESTAMP) - INTERVAL {lookback} DAY
+                  AND c.ts <= ? AND c.ts > CAST(? AS TIMESTAMP) - INTERVAL {int(lookback_days)} DAY
             ),
-            sma AS (SELECT instrument_id, ts, close, {smas} FROM bars),
+            per_bar AS ({per_bar}),
             scoped AS (
                 SELECT s.*, coalesce(t.value, '{UNCLASSIFIED}') AS industry
-                FROM sma s CROSS JOIN first_sync
+                FROM per_bar s CROSS JOIN first_sync
                 LEFT JOIN instrument_tags t ON t.instrument_id = s.instrument_id AND t.key = 'industry'
                 WHERE s.ts >= ? AND {membership}
             )
-            {counts}
         """
-        params: list[Any] = [universe, end, start, start, *member_params, *([universe] * len(periods))]
-        return sql, params
+        return sql, [universe, end, start, start, *member_params]
+
+
+class DuckAthRepository:
+    """daily_ath: each instrument's highest daily high up to every daily bar (derived from candles),
+    plus its refresh state in derived_state. Maintained by pipelines/highs.AthService."""
+
+    def __init__(self, db: Database):
+        self._db = db
+
+    def get_state(self, key: str) -> Optional[str]:
+        return _get_state(self._db, "derived_state", key)
+
+    def set_state(self, key: str, value: str) -> None:
+        _set_state(self._db, "derived_state", key, value)
+
+    def max_ingested_at(self) -> Optional[datetime]:
+        return _max_daily_ingested_at(self._db)
+
+    def changed_since(self, watermark: Optional[datetime]) -> pd.DataFrame:
+        """See `_daily_changed_since`."""
+        return _daily_changed_since(self._db, watermark)
+
+    def rebuild_from(self, changed: pd.DataFrame) -> int:
+        """Recompute each instrument in `changed` (instrument_id, from_ts) from its from_ts on: the
+        highest valid high before from_ts, carried into a running max. Returns rows written."""
+        if changed.empty:
+            return 0
+        with self._db.transaction() as cur:
+            cur.register("changed", changed)
+            cur.execute(
+                "DELETE FROM daily_ath WHERE EXISTS (SELECT 1 FROM changed c"
+                " WHERE c.instrument_id = daily_ath.instrument_id AND daily_ath.ts >= c.from_ts)")
+            cur.execute(
+                """
+                INSERT INTO daily_ath (instrument_id, ts, ath)
+                SELECT instrument_id, ts,
+                       CASE WHEN before IS NULL THEN running WHEN running IS NULL THEN before
+                            ELSE greatest(before, running) END
+                FROM (
+                    SELECT k.instrument_id, k.ts, p.before,
+                           max(CASE WHEN isfinite(k.high) AND k.high > 0 THEN k.high END) OVER (
+                               PARTITION BY k.instrument_id ORDER BY k.ts ROWS UNBOUNDED PRECEDING) AS running
+                    FROM candles k
+                    JOIN changed c ON c.instrument_id = k.instrument_id AND k.ts >= c.from_ts
+                    JOIN (
+                        SELECT c.instrument_id,
+                               max(CASE WHEN isfinite(k.high) AND k.high > 0 THEN k.high END) AS before
+                        FROM changed c
+                        LEFT JOIN candles k ON k.instrument_id = c.instrument_id AND k.timeframe = '1d'
+                                           AND k.ts < c.from_ts
+                        GROUP BY c.instrument_id
+                    ) p ON p.instrument_id = k.instrument_id
+                    WHERE k.timeframe = '1d'
+                )
+                """)
+            n = cur.execute(
+                "SELECT count(*) FROM daily_ath a JOIN changed c ON c.instrument_id = a.instrument_id"
+                " AND a.ts >= c.from_ts").fetchone()[0]
+            cur.unregister("changed")
+        return int(n)
 
 
 class DuckDataQualityRepository:
@@ -836,30 +1007,19 @@ class DuckDataQualityRepository:
     # --- state ---------------------------------------------------------------------------
 
     def get_state(self, key: str) -> Optional[str]:
-        row = self._db.cursor().execute("SELECT value FROM dq_state WHERE key = ?", [key]).fetchone()
-        return row[0] if row else None
+        return _get_state(self._db, "dq_state", key)
 
     def set_state(self, key: str, value: str) -> None:
-        self._db.cursor().execute("INSERT OR REPLACE INTO dq_state VALUES (?, ?, current_timestamp)", [key, value])
+        _set_state(self._db, "dq_state", key, value)
 
     # --- check inputs --------------------------------------------------------------------
 
     def max_ingested_at(self) -> Optional[datetime]:
-        return self._db.cursor().execute("SELECT max(ingested_at) FROM candles WHERE timeframe = '1d'").fetchone()[0]
+        return _max_daily_ingested_at(self._db)
 
     def changed_since(self, watermark: Optional[datetime], instrument_ids: Optional[Sequence[int]] = None) -> pd.DataFrame:
-        """instrument_id, from_ts: instruments with daily bars ingested after `watermark` and the
-        earliest such bar (every instrument from its first bar when `watermark` is None)."""
-        where, params = ["timeframe = '1d'"], []
-        if watermark is not None:
-            where.append("ingested_at > ?")
-            params.append(watermark)
-        if instrument_ids is not None:
-            where.append(f"instrument_id IN ({','.join('?' * len(instrument_ids))})" if instrument_ids else "FALSE")
-            params.extend(instrument_ids)
-        return self._db.cursor().execute(
-            f"SELECT instrument_id, min(ts) AS from_ts FROM candles WHERE {' AND '.join(where)} GROUP BY 1",
-            params).df()
+        """See `_daily_changed_since`."""
+        return _daily_changed_since(self._db, watermark, instrument_ids)
 
     def bars_from(self, changed: pd.DataFrame) -> pd.DataFrame:
         """Daily bars of each changed instrument from the bar before its `from_ts` (context for the gap
@@ -990,6 +1150,47 @@ class DuckDataQualityRepository:
         """Issues per check and status."""
         return [dict(zip(("check_name", "status", "issues"), r)) for r in self._db.cursor().execute(
             "SELECT check_name, status, count(*) FROM dq_issues GROUP BY 1, 2 ORDER BY 1, 2").fetchall()]
+
+    def repair_candidates(self, gap_instruments: Sequence[int], retry_before: datetime, max_attempts: int,
+                          limit: int) -> pd.DataFrame:
+        """Open issues the repair step can act on: bad prices (missing/zero/negative price, high below low)
+        on any instrument, and gaps on `gap_instruments`; fewer than `max_attempts` tries and none after
+        `retry_before`. Bad prices first, then the least-tried, then the most recent.
+        Columns: issue_id, check_name, instrument_id, start_ts, end_ts, repair_attempts."""
+        ids = list(gap_instruments)
+        gap_filter = f"instrument_id IN ({','.join('?' * len(ids))})" if ids else "FALSE"
+        return self._db.cursor().execute(
+            f"""
+            SELECT issue_id, check_name, instrument_id, start_ts, end_ts, coalesce(repair_attempts, 0) AS repair_attempts
+            FROM dq_issues
+            WHERE status = 'open' AND coalesce(repair_attempts, 0) < ?
+              AND (last_repair_at IS NULL OR last_repair_at <= ?)
+              AND ((check_name = 'bad_bar' AND (detail LIKE '%price%' OR detail LIKE '%high below low%'))
+                   OR (check_name = 'gap' AND {gap_filter}))
+            ORDER BY check_name = 'bad_bar' DESC, repair_attempts, start_ts DESC
+            LIMIT ?
+            """, [max_attempts, retry_before, *ids, limit]).df()
+
+    def note_repair_attempt(self, issue_ids: Sequence[str], now: datetime) -> None:
+        if issue_ids:
+            self._db.cursor().execute(
+                f"UPDATE dq_issues SET repair_attempts = coalesce(repair_attempts, 0) + 1, last_repair_at = ?"
+                f" WHERE issue_id IN ({','.join('?' * len(issue_ids))})", [now, *issue_ids])
+
+    def resolve(self, issue_ids: Sequence[str], now: datetime, note: str) -> int:
+        """Mark issues resolved by a repair, with a note saying how."""
+        if not issue_ids:
+            return 0
+        return len(self._db.cursor().execute(
+            f"UPDATE dq_issues SET status = 'resolved', resolved_at = ?, note = ?"
+            f" WHERE issue_id IN ({','.join('?' * len(issue_ids))}) RETURNING issue_id",
+            [now, note, *issue_ids]).fetchall())
+
+    def accept_exhausted(self, check: str, max_attempts: int, note: str) -> int:
+        """Accept open issues of `check` that are still open after `max_attempts` repair attempts."""
+        return len(self._db.cursor().execute(
+            "UPDATE dq_issues SET status = 'accepted', note = ? WHERE check_name = ? AND status = 'open'"
+            " AND coalesce(repair_attempts, 0) >= ? RETURNING issue_id", [note, check, max_attempts]).fetchall())
 
     def accept(self, issue_id: str, note: str) -> bool:
         """Mark an issue as known and fine, so it stops being reported as open."""

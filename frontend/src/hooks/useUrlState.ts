@@ -13,6 +13,9 @@ export const boolCodec: UrlCodec<boolean> = { parse: (raw) => raw === '1', forma
 
 export const intCodec: UrlCodec<number> = { parse: (raw) => parseInt(raw, 10) || 0, format: (value) => String(value) };
 
+/** Decimal numbers (e.g. 7.5); unparseable = 0. */
+export const numberCodec: UrlCodec<number> = { parse: (raw) => parseFloat(raw) || 0, format: (value) => String(value) };
+
 /** `10,20` <-> [10, 20]; non-numbers are dropped. */
 export const intListCodec: UrlCodec<number[]> = {
   parse: (raw) => raw.split(',').map((v) => parseInt(v, 10)).filter((v) => v > 0),

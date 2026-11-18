@@ -24,26 +24,47 @@ def overview(as_of: Optional[date] = None, universe: str = DEFAULT_UNIVERSE, lim
 
 @router.get("/market/sector-breadth")
 def sector_breadth(as_of: Optional[date] = None, universe: str = DEFAULT_UNIVERSE,
-                   periods: list[int] = Query([10, 20]), c: Container = Depends(get_container)) -> dict:
-    """Per sector: stocks priced and how many closed above each N-day SMA, on the latest session."""
+                   periods: list[int] = Query([10, 20]), near_pct: float = 10.0, near_basis: str = "52w",
+                   c: Container = Depends(get_container)) -> dict:
+    """Per sector: stocks priced and how many closed above each N-day SMA, and how many closed within
+    `near_pct`% of their 52-week (`near_basis=52w`) or all-time (`ath`) high, on the latest session."""
     cutoff = datetime.combine(as_of, time.max) if as_of else None
     try:
-        return c.breadth.sectors(universe, cutoff, periods)
+        return c.breadth.sectors(universe, cutoff, periods, near_pct, near_basis)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
 
 
 @router.get("/market/sector-rotation")
 def sector_rotation(as_of: Optional[date] = None, universe: str = DEFAULT_UNIVERSE, period: int = 50,
-                    ago_n: int = 1, ago_unit: str = "w", min_stocks: int = 5,
+                    ago_n: int = 1, ago_unit: str = "w", min_stocks: int = 5, rank_by: str = "ma",
+                    near_pct: float = 10.0, near_basis: str = "52w",
                     c: Container = Depends(get_container)) -> dict:
-    """Per sector: average rank by share of stocks above the `period` SMA over the last 5 sessions
-    vs the 5 sessions ending `ago_n` days/weeks/months earlier."""
+    """Per sector: average rank by share of stocks above the `period` SMA (`rank_by=ma`) or within
+    `near_pct`% of their high (`rank_by=near_high`) over the last 5 sessions vs the 5 sessions ending
+    `ago_n` days/weeks/months earlier."""
     cutoff = datetime.combine(as_of, time.max) if as_of else None
     try:
-        return c.breadth.rotation(universe, cutoff, period, {"n": ago_n, "unit": ago_unit}, min_stocks)
+        return c.breadth.rotation(universe, cutoff, period, {"n": ago_n, "unit": ago_unit}, min_stocks,
+                                  rank_by, near_pct, near_basis)
     except ValueError as exc:
         raise HTTPException(422, str(exc))
+
+
+@router.post("/jobs/repair")
+def repair_job(c: Container = Depends(get_container)) -> dict:
+    """Run the data repair step now, then bring derived data up to date and re-check data quality
+    (the nightly job's steps after downloading)."""
+    try:
+        return c.daily_update.repair_now()
+    except RuntimeError as exc:  # the nightly update is running
+        raise HTTPException(409, str(exc))
+
+
+@router.post("/jobs/highs")
+def highs_job(rebuild: bool = False, c: Container = Depends(get_container)) -> dict:
+    """Bring the all-time-high cache (daily_ath) up to date, or recompute it all with `rebuild`."""
+    return {"rows": c.ath.refresh(full=rebuild)}
 
 
 @router.post("/jobs/breadth")

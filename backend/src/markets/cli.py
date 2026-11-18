@@ -69,6 +69,13 @@ def main(argv: Optional[list[str]] = None) -> None:
     p.add_argument("--backfill", action="store_true", help="recompute every day since the first candle")
     p.add_argument("--api", default="http://127.0.0.1:8000", help="API server to use when it holds the database")
 
+    p = sub.add_parser("repair", help="re-download fixable data-quality issues now; remove bars still bad")
+    p.add_argument("--api", default="http://127.0.0.1:8000", help="API server to use when it holds the database")
+
+    p = sub.add_parser("highs", help="bring the all-time-high cache up to date (changed stocks only)")
+    p.add_argument("--rebuild", action="store_true", help="recompute every stock's full history")
+    p.add_argument("--api", default="http://127.0.0.1:8000", help="API server to use when it holds the database")
+
     p = sub.add_parser("watchlists", help="sync watchlists from universes.py and list them")
     p.add_argument("--no-sync", action="store_true")
 
@@ -123,6 +130,14 @@ def main(argv: Optional[list[str]] = None) -> None:
             print(f"database is in use by the API server; running through {args.api}")
             print(f"sector breadth: {_post_api(args.api, '/api/jobs/breadth', {'backfill': args.backfill})['rows']} rows")
             return
+        if args.command == "repair" and busy:
+            print(f"database is in use by the API server; running through {args.api}")
+            _print_repair(_post_api(args.api, "/api/jobs/repair", {}))
+            return
+        if args.command == "highs" and busy:
+            print(f"database is in use by the API server; running through {args.api}")
+            print(f"all-time highs: {_post_api(args.api, '/api/jobs/highs', {'rebuild': args.rebuild})['rows']} rows")
+            return
         raise SystemExit(f"database is locked by another process (is `markets serve` running?): {exc}")
     try:
         if args.command == "init-db":
@@ -151,6 +166,10 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "breadth":
             rows = c.breadth.backfill() if args.backfill else c.breadth.update()
             print(f"sector breadth: {rows} rows")
+        elif args.command == "repair":
+            _print_repair(c.daily_update.repair_now())
+        elif args.command == "highs":
+            print(f"all-time highs: {c.ath.refresh(full=args.rebuild)} rows")
         elif args.command == "watchlists":
             if not args.no_sync:
                 for r in c.watchlist_sync.sync_all():
@@ -300,6 +319,19 @@ def _append_summary(r: dict, scheduled: bool) -> None:
             f.write(summary_block(r, scheduled))
     except Exception as exc:
         print(f"  warning: could not write {path.name}: {exc!r}")
+
+
+def _print_repair(report: dict) -> None:
+    """`report` is DailyUpdateReport.to_dict() from `repair_now` (directly or as JSON)."""
+    r = report["repair"] or {}
+    for e in report["errors"]:
+        print(f"  error: {e}")
+    if not r:
+        return
+    print(f"repair: {r['tried']} re-downloaded ({r['bars_written']} bars written), {r['removed']} bad bars removed, "
+          f"{r['resolved']} resolved, {r['accepted']} accepted as provider holes, {r['rate_limited']} rate-limited")
+    for e in r["errors"][:20]:
+        print(f"  error: {e}")
 
 
 def _post_api(base_url: str, path: str, params: dict) -> dict:

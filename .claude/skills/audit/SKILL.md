@@ -15,7 +15,7 @@ The update runs at 17:00 on weekdays (`backend\scripts\nightly-update.ps1`, abou
 
 - Open the log for the latest weekday run: today's date when you run in the evening as scheduled (if run on a weekend or before 17:00, the previous weekday's).
 - It must end with `==== <time> finished with exit code N`. If the starting line has no matching finished line, the update is still running or died: report that, with the last lines of the log, and stop. If the log file is missing, say the update didn't run.
-- Note the summary lines: `daily update: X/Y instruments ok, N failed`, errors (`error: ...`), and the data-quality lines (`data quality (incremental|full): ...` then one line per check with found/new/resolved).
+- Note the summary lines: `daily update: X/Y instruments ok, N failed`, errors (`error: ...`), the repair line (`repair: N tried, N bars re-downloaded, N bad bars removed, N resolved, N accepted as provider holes, N rate-limited`) and the data-quality lines (`data quality (incremental|full): ...` then one line per check with found/new/resolved).
 - Read the last few blocks of `backend\logs\nightly-summary.log` (one short block per run, kept indefinitely) and compare tonight with previous nights: failures, run time, bar counts, new stocks backfilled. Mention a trend (e.g. failures or run time creeping up) even when tonight looks fine.
 
 ## 2. Read the issues
@@ -38,6 +38,10 @@ The commands work while the API server is running (they go through `http://127.0
 | `stale` | Current watchlist member with no bar for more than 3 market sessions | Suspended/delisted, symbol or token changed (EQ↔BE series), failed downloads |
 | `short_history` | Fewer than 200 bars: stored as **accepted** (expected for new listings), never flagged | Only mention if something looks wrong |
 | `failed_download` | Latest daily download attempt for a stock errored | Angel rate limit (`exceeding access rate`), timeouts |
+
+**What the nightly job already fixes by itself** (`backend\src\markets\pipelines\repair.py`, runs after the downloads): bad prices (missing/zero/negative price, high below low) on any stock are re-downloaded, and removed if still bad (kept in `candle_revisions`; the issue is resolved with a note); gaps on Nifty 500 / Total Market / benchmark stocks are re-downloaded at most once a week, and accepted as "provider hole" after 3 tries. At most 50 re-downloads a night; rate-limited tries don't count. Don't propose re-downloads for these: report what the repair did and only flag what it can't fix (splits, zero volume, gaps on other stocks, anything failing repeatedly). Manual run: `markets repair`.
+
+**Known, left open by choice (don't report):** 22 `gap` issues of NSE's dummy test symbols (`011NSETEST-EQ` … `V1NSETEST`, 2023-04-27 → 2024-10-31). They're no longer synced into `nse_traded`; the user chose to leave the issues as they are (2026-11-19).
 
 Thresholds and logic: `backend\src\markets\engine\data_quality.py`. Storage: `dq_issues` / `dq_state` (`backend\src\markets\storage\duckdb\migrations\007_data_quality.sql`). Runner and incremental logic: `backend\src\markets\pipelines\data_quality.py`.
 

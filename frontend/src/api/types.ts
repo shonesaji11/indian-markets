@@ -272,19 +272,35 @@ export interface SavedScan {
   updated_at: string;
 }
 
+/** Near-high reference: 52-week high, or all-time high (since listing or the first stored bar). */
+export type HighBasis = '52w' | 'ath';
+
+/** "Within `pct`% of the `basis` high". */
+export interface NearHigh {
+  pct: number;
+  basis: HighBasis;
+}
+
 export interface SectorBreadthRow {
   industry: string;
   stocks: number;
   /** Stocks above each SMA, keyed by period ("10", "20"). */
   above: Record<string, number>;
+  /** Stocks with a reference high, and how many closed within near_pct% of it. */
+  near_high: { stocks: number; near: number } | null;
 }
 
 export interface SectorBreadth {
   as_of: string | null;
   universe: string;
   periods: number[];
+  near_pct: number;
+  near_basis: HighBasis;
   sectors: SectorBreadthRow[];
 }
+
+/** What the rotation view ranks sectors by: share above the MA, or share near their high. */
+export type RankBy = 'ma' | 'near_high';
 
 /** One sector's average daily rank by share of stocks above the SMA (1 = best), now vs earlier. */
 export interface SectorRotationRow {
@@ -306,6 +322,9 @@ export interface SectorRotation {
   universe: string;
   period: number;
   ago: ScanAgo;
+  rank_by: RankBy;
+  near_pct: number;
+  near_basis: HighBasis;
   /** Sessions averaged on each side. */
   window: number;
   min_stocks: number;

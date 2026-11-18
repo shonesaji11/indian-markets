@@ -10,7 +10,9 @@ from typing import Any, Optional
 from markets.core.models import Interval
 from markets.pipelines.breadth import BreadthService
 from markets.pipelines.data_quality import DataQualityService
+from markets.pipelines.highs import AthService
 from markets.pipelines.ingest import IngestionService
+from markets.pipelines.repair import RepairService
 from markets.pipelines.watchlists import WatchlistService
 from markets.storage.duckdb.repositories import DuckMarketRepository, DuckWatchlistRepository
 
@@ -32,6 +34,8 @@ class DailyUpdateReport:
     new_bars: int = 0  # bars written for those (included in bars_written)
     failed_symbols: list[str] = field(default_factory=list)
     breadth_rows: int = 0
+    repair: Optional[dict[str, Any]] = None  # RepairService.run() summary
+    ath_rows: int = 0  # daily_ath rows rewritten (all-time-high cache)
     data_quality: Optional[dict[str, Any]] = None  # DataQualityService.run() summary
     errors: list[str] = field(default_factory=list)
 
@@ -51,10 +55,13 @@ class DailyUpdateService:
     def __init__(self, ingestion: IngestionService, watchlist_sync: WatchlistService,
                  watchlists: DuckWatchlistRepository, market: DuckMarketRepository,
                  breadth: Optional[BreadthService] = None, retry_delay: float = 60.0,
-                 data_quality: Optional[DataQualityService] = None):
+                 data_quality: Optional[DataQualityService] = None, ath: Optional[AthService] = None,
+                 repair: Optional[RepairService] = None):
         self.ingestion = ingestion
         self.retry_delay = retry_delay
         self.breadth = breadth
+        self.ath = ath
+        self.repair = repair
         self.data_quality = data_quality
         self.watchlist_sync = watchlist_sync
         self.watchlists = watchlists
@@ -66,6 +73,19 @@ class DailyUpdateService:
             raise RuntimeError("a daily update is already running")
         try:
             return self._run(sync_instruments, sync_watchlists)
+        finally:
+            self._lock.release()
+
+    def repair_now(self) -> dict[str, Any]:
+        """Only the steps after downloading (repair, all-time highs, breadth, data quality), for
+        `markets repair`. Returns the report as a dict."""
+        if not self._lock.acquire(blocking=False):
+            raise RuntimeError("a daily update is already running")
+        try:
+            report = DailyUpdateReport(started_at=datetime.now())
+            self._after_download(report)
+            report.finished_at = datetime.now()
+            return report.to_dict()
         finally:
             self._lock.release()
 
@@ -109,9 +129,37 @@ class DailyUpdateService:
         report.failed_symbols = [getattr(self.ingestion.instruments.get(i), "symbol", str(i)) for i in failures]
         report.errors.extend(f"instrument {i}: {e}" for i, e in failures.items())
 
+        self._after_download(report)
+        report.finished_at = datetime.now()
+        log.info("daily update done: %d ok, %d failed (%d retried), %d bars",
+                 report.ok, report.failed, report.retried, report.bars_written)
+        return report
+
+    def _after_download(self, report: DailyUpdateReport) -> None:
+        """Repair, then bring derived data up to date, then check data quality; a failing step is
+        recorded in `report.errors` and the next one still runs."""
+        # Fix what the data-quality checks found earlier (re-download, or remove bars still bad), before
+        # anything derived is brought up to date.
+        removed_since = None
+        if self.repair is not None:
+            try:
+                report.repair = self.repair.run()
+                if report.repair["earliest_removed"]:
+                    removed_since = datetime.fromisoformat(report.repair["earliest_removed"])
+            except Exception as exc:
+                report.errors.append(f"repair: {exc}")
+                log.exception("data repair failed")
+
+        if self.ath is not None:
+            try:
+                report.ath_rows = self.ath.refresh()
+            except Exception as exc:
+                report.errors.append(f"all-time highs: {exc}")
+                log.exception("all-time high refresh failed")
+
         if self.breadth is not None:
             try:
-                report.breadth_rows = self.breadth.update()
+                report.breadth_rows = self.breadth.update(since=removed_since)
             except Exception as exc:
                 report.errors.append(f"sector breadth: {exc}")
                 log.exception("sector breadth update failed")
@@ -123,11 +171,6 @@ class DailyUpdateService:
             except Exception as exc:
                 report.errors.append(f"data quality: {exc}")
                 log.exception("data-quality checks failed")
-
-        report.finished_at = datetime.now()
-        log.info("daily update done: %d ok, %d failed (%d retried), %d bars",
-                 report.ok, report.failed, report.retried, report.bars_written)
-        return report
 
     def _ingest(self, instrument_id: int, report: DailyUpdateReport, failures: dict, new: bool) -> None:
         result = self.ingestion.ingest(instrument_id, Interval.D1)

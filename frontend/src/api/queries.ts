@@ -29,6 +29,8 @@ import type {
   ScanPerformanceRequest,
   ScanRequest,
   ScanRunResult,
+  NearHigh,
+  RankBy,
   SectorBreadth,
   SectorRotation,
   Watchlist,
@@ -261,24 +263,37 @@ export function useDeleteScan() {
   });
 }
 
-export function useSectorBreadth(universe: string, periods: number[], asOf?: string) {
+export function useSectorBreadth(universe: string, periods: number[], near: NearHigh, asOf?: string) {
   return useQuery({
-    queryKey: ['sector-breadth', universe, periods, asOf] as const,
-    queryFn: () => http.get<SectorBreadth>('/market/sector-breadth', { universe, as_of: asOf, periods }),
+    queryKey: ['sector-breadth', universe, periods, near, asOf] as const,
+    queryFn: () =>
+      http.get<SectorBreadth>('/market/sector-breadth', {
+        universe,
+        as_of: asOf,
+        periods,
+        near_pct: near.pct,
+        near_basis: near.basis,
+      }),
     placeholderData: keepPreviousData,
   });
 }
 
-/** Sector rank change by share above the `period` SMA; disabled until `ago` is set (now isn't a comparison). */
-export function useSectorRotation(universe: string, period: number, ago: ScanAgo | undefined, minStocks: number,
-  asOf?: string, enabled = true) {
+/**
+ * Sector rank change by share above the `period` SMA or near their high (`rankBy`); disabled until
+ * `ago` is set (now isn't a comparison).
+ */
+export function useSectorRotation(universe: string, rankBy: RankBy, period: number, near: NearHigh,
+  ago: ScanAgo | undefined, minStocks: number, asOf?: string, enabled = true) {
   return useQuery({
-    queryKey: ['sector-rotation', universe, period, ago, minStocks, asOf] as const,
+    queryKey: ['sector-rotation', universe, rankBy, period, near, ago, minStocks, asOf] as const,
     queryFn: () =>
       http.get<SectorRotation>('/market/sector-rotation', {
         universe,
         as_of: asOf,
+        rank_by: rankBy,
         period,
+        near_pct: near.pct,
+        near_basis: near.basis,
         ago_n: ago?.n,
         ago_unit: ago?.unit,
         min_stocks: minStocks,

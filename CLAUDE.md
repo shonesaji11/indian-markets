@@ -1,5 +1,7 @@
 # Working rules
 
+All rules, preferences and project knowledge live in the project: this file, `BOOK_OF_WORK.md`, and the skills under `.claude/skills/`. Never save them to Claude's personal memory; when I give a lasting instruction, add it here.
+
 ## Be objective (very important)
 - Never agree with me to flatter me or just to sound agreeable. Judge every idea, plan or approach on its merits.
 - If my thinking is inefficient, wrong or missing something, say so directly, explain why, and propose the better option. Challenge my assumptions, including in trading ideas and feature requests.
@@ -13,7 +15,9 @@
 - For any non-trivial feature or change: decide the architecture first (where it lives, data flow, interfaces, storage), present a short plan, and wait for my go-ahead before implementing.
 - Every visible UI change gets a mockup first, including small, specific tweaks I ask for directly (moving a panel, changing a layout, removing an element). Show an inline visual of the new/changed screen with its states (empty, loading, populated, error where relevant) and wait for my OK before writing code.
 - Think through edge cases up front (empty/missing data, holidays and gaps, timezones, rate limits, partial failures) and discuss them with me before coding.
+- UI style: for quick actions (menus, pickers, add to list, rename, confirm a delete) use a small drop-down under its button (`components/ui/Popover`), not a centred dialog over a dimmed page. Keep the screen lean: no counts or status labels unless they help a decision. In mockups, label pop-up states clearly as separate from the page.
 - When requirements are ambiguous, ask me instead of guessing. Trivial fixes (typos, one-line bugs) don't need a plan; just do them.
+- Ideas I mention in passing ("for the future", "maybe"): answer the direct question, add a short dated entry under Ideas in `BOOK_OF_WORK.md`, say in one line that it's logged, and move on. No investigation, plan or mockup unless I ask to build it.
 - Book of work: anything left unresolved (an ambiguity we park, a known limitation, a bug outside the task, an idea for later) goes into `BOOK_OF_WORK.md` in the right section, dated, with the options considered and the current behaviour. Check it before working in an area, and delete items once they're resolved.
 - The book of work holds only things still to do or decide. Before every commit, re-read the items in the areas the work touched: delete any it resolved (git history keeps the record), and cut partly resolved ones down to what's left. Never leave an entry that only describes finished work.
 
@@ -41,6 +45,14 @@
 - Then run the full backend test suite (`pytest` in `backend/`), not just the new tests, and fix every failure before calling the work done.
 - If a failure or an edge case has no obvious right answer, don't pick one silently. Explain the issue and its context, lay out a few possible solutions with their trade-offs and your recommendation, then wait for my decision and implement what I choose.
 
+## Before calling work done (very important)
+- Walk every rule in this file, one by one, as an explicit step in the task plan before the commit step: `markets-codebase` map (SKILL.md and every touched entry in references/*.md), derived-data registry, `BOOK_OF_WORK.md`, tests for every new feature or calculation (frontend too) plus a full backend `pytest` run, secret checks. If a rule seems not to apply, say so and ask; never skip one silently.
+- Report every failure from the task in one clearly labelled list in the closing message, never scattered across messages: failing tests, typecheck or build errors, tool or script errors, anything that went wrong. For each: what failed, why, and what you did (fixed the code, fixed the test, reverted, worked around). Any failure resolved by changing behaviour, rather than fixing a bug, is my decision: ask instead of deciding.
+
+## Data correctness lives in the nightly job
+- Detecting and repairing wrong data (splits/bonuses, bad bars) belongs to the nightly ingestion job (`DailyUpdateService` and what it calls). Calculations, scans and UI assume stored candles are correct and don't each re-check them.
+- Downstream code still handles data that is real but incomplete (holidays and gaps, short history, suspended stocks, NaN/zero volume) and is tested for it.
+
 ## Derived data and rebuilds (very important)
 - Every stored computed result (sector breadth, indicator values, DQ issues, and anything added later) is listed in `.claude/skills/markets-codebase/references/derived-data.md` with its inputs and rebuild command.
 - Any code that saves computed results (a new table filled from other tables, a cache, an output file, or a new writer to an existing one) must add or update its section there in the same change. Prefer a version guard and a rebuild command over relying on someone remembering.
@@ -51,6 +63,11 @@
 - Review the file list (`git status --short`): no `.env`, `ngrok-policy.yml`, logs, `*.duckdb`, or other local/secret files staged. New secret files get a `.gitignore` entry first.
 - Scan the staged diff (`git diff --cached`) for credentials: API keys, passwords, PINs, TOTP secrets, tokens (`Bearer`, `eyJ...` JWTs), `authtoken`, IPs/MAC addresses, real account or client codes. Example files must hold placeholders only.
 - If anything turns up, unstage it, move the value to a gitignored file, and tell me before committing.
+
+## Branches (other agents edit this folder too)
+- Never switch branches or commit others' uncommitted work in the main folder: a `git checkout` there changes the branch under every other agent and drags their unfinished edits along.
+- For any code change, work in your own worktree on a temporary branch off `main`, outside OneDrive (so `node_modules` and DB files aren't synced): `git worktree add C:\Users\shone\worktrees\markets-<name> -b feat/<name> main`. It needs its own `npm install` and `backend/.env` copy; tests use their own temp DBs.
+- When done and checked, commit on the branch, then merge into `main` from the main folder (`git merge --no-ff feat/<name>`). If git refuses because another agent's uncommitted edits touch the same files, stop and tell me; never stash or discard their work. Then remove the worktree and delete the branch.
 
 ## Project context
 - Backend: `backend/src/markets` (FastAPI + DuckDB). Frontend: React in `frontend/`.

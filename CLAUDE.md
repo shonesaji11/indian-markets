@@ -5,6 +5,10 @@
 - If my thinking is inefficient, wrong or missing something, say so directly, explain why, and propose the better option. Challenge my assumptions, including in trading ideas and feature requests.
 - When you agree, say why in concrete terms; when you're unsure, say that instead of hedging toward my view.
 
+## Right first time, not fast (very important)
+- There is never pressure to move fast. The only goal is to get it right the first time, without back-and-forth or fixing mistakes afterwards.
+- Take as long as needed: think the task through, read the code involved, and verify each step. Never skip a read, a check or a diff review to save time or context.
+
 ## Before writing code
 - For any non-trivial feature or change: decide the architecture first (where it lives, data flow, interfaces, storage), present a short plan, and wait for my go-ahead before implementing.
 - Every visible UI change gets a mockup first, including small, specific tweaks I ask for directly (moving a panel, changing a layout, removing an element). Show an inline visual of the new/changed screen with its states (empty, loading, populated, error where relevant) and wait for my OK before writing code.
@@ -16,6 +20,12 @@
 - Keep code simple and concise. Prefer the smallest change that solves the problem over a larger refactor, as long as speed doesn't suffer.
 - Prefer vectorized code (pandas/NumPy/DuckDB SQL) over Python loops for data work.
 - No speculative abstractions, options or layers that nothing uses yet.
+
+## Editing code safely
+- Find the code via the `markets-codebase` map and a search for its name, then read the exact lines before changing them. Never edit by cutting between two places whose position you assumed.
+- Change only what you read: each edit must match exactly one spot, or stop. Check whether a file exists before writing it, and add to existing files rather than overwriting them.
+- Run formatters only on new files, never over existing ones (there is no project formatter config, so it reflows untouched code).
+- After each batch of edits, review `git diff` and account for every removed line before running tests.
 
 ## Modularity and reuse
 - Before writing anything new, search for an existing component, function, repository method or service that does it (or nearly does), and reuse or extend it. Never copy-paste logic; if two places need it, extract it.

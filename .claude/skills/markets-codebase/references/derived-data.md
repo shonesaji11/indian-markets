@@ -46,7 +46,7 @@ Commands run from `backend/` (`.venv\Scripts\markets.exe ...`). When `markets se
 - **Rebuild:** check logic changed → bump `DQ_VERSION` (forces a full run next time) or run `markets dq check --full`. Bars deleted or edited without a new `ingested_at` → `markets dq check --full`.
 
 ## Computed live (nothing stored, no rebuild)
-- `v_daily_stats_v1`, `daily_signals_v1(as_of)` (SQL), Overview (`MarketOverviewService`), scans and custom scans (`ScreenerService`, `engine/scans.py`), scan basket performance, sector pages, breadth for non-stored MA periods or universes, sector near-high counts (52-week high is computed live; the all-time high is read from `daily_ath`).
+- `v_daily_stats_v1`, `daily_signals_v1(as_of)` (SQL), Overview (`MarketOverviewService`), scans and custom scans (`ScreenerService`, `engine/scans.py`), scan basket and watchlist performance, sector pages, breadth for non-stored MA periods or universes, sector near-high counts (52-week high is computed live; the all-time high is read from `daily_ath`).
 - Changing their logic still follows the versioning rule (add `_v2`, bump `@scan` version); results change on the next request.
 - Browser: TanStack Query caches responses in memory (indicator list and scan fields with `staleTime: Infinity`) → reload the page after a backend change. sessionStorage chart lists hold only ids and order.
 

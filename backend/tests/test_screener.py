@@ -186,6 +186,22 @@ def test_basket_performance_service_and_api(loaded):
         assert none["counted"] == 0 and none["basket"] == [] and none["benchmark"] is None
 
 
+def test_basket_performance_snaps_a_non_trading_start(loaded):
+    """A watchlist's From date can be a weekend or holiday: it picks on the session before it."""
+    ids = [loaded.instruments.find("NSE", s).instrument_id for s in ("RELIANCE-EQ", "TCS-EQ")]
+    end = datetime(2024, 6, 28, 23, 59)
+    friday = loaded.screener.performance(ids, datetime(2024, 5, 31), end)
+    sunday = loaded.screener.performance(ids, datetime(2024, 6, 2), end)
+    assert friday["start"].startswith("2024-05-31") and friday["counted"] == 2
+    assert sunday == friday
+    # Before any stored data: nothing to pick on, so nothing is counted.
+    early = loaded.screener.performance(ids, datetime(2022, 6, 1), end)
+    assert early["counted"] == 0 and early["basket"] == []
+    # After the latest stored session: picks on it, with no session to buy at yet.
+    latest = loaded.screener.performance(ids, datetime(2025, 3, 1))
+    assert latest["sessions"] == 0 and latest["counted"] == 0 and latest["total"] == 2
+
+
 def _expected(loaded, as_of, rule):
     """Stocks for which rule(closes, ts-indexed candles) holds, computed straight from stored candles."""
     out = set()

@@ -98,3 +98,7 @@ class DqAcceptIn(BaseModel):
 class SavedScanIn(BaseModel):
     name: str
     definition: dict[str, Any]  # {"filter": ..., "universe": ..., "include_indices": ...}
+
+
+class WatchlistNameIn(BaseModel):
+    name: str  # trimmed; must be unique among your lists

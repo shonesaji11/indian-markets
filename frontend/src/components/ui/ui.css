@@ -635,3 +635,55 @@
   outline: 2px solid var(--text);
   outline-offset: 2px;
 }
+
+/* ---------- Popover ---------- */
+.ui-popover {
+  position: relative;
+  display: inline-flex;
+}
+.ui-popover__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 220px;
+  padding: var(--space-1) 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  font-weight: 400;
+  font-size: var(--text-md);
+  color: var(--text);
+  text-align: left;
+}
+.ui-popover__panel--left {
+  left: 0;
+}
+.ui-popover__panel--right {
+  right: 0;
+}
+/* A clickable row inside a popover. */
+.ui-popover__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 6px var(--space-3);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.ui-popover__item:hover {
+  background: var(--surface-hover);
+}
+.ui-popover__item[aria-current='true'] {
+  color: var(--accent);
+}
+.ui-popover__section {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+  margin-top: var(--space-1);
+}

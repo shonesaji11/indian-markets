@@ -1,0 +1,98 @@
+/* Star in the chart header: filled and accent-coloured when the stock is in any of your lists. */
+.watchlist-star--on {
+  color: var(--accent);
+}
+.watchlist-star__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watchlist-star__first {
+  padding: var(--space-2) var(--space-3);
+}
+.watchlist-star__hint {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+/* Name box (create / rename). */
+.watchlist-name__row {
+  flex-wrap: nowrap;
+  gap: var(--space-2);
+}
+.watchlist-name__row .ui-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+.watchlist-name__error {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--down);
+}
+
+/* Side pane on the Watchlists tab. */
+.watchlist-pane__toolbar {
+  position: relative;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+}
+/* The list picker's drop-down spans the whole toolbar, so it stays inside the pane. */
+.watchlist-pane__toolbar > .ui-popover:first-child {
+  position: static;
+  flex: 1;
+  min-width: 0;
+}
+.watchlist-pane__toolbar > .ui-popover:first-child > .ui-popover__panel {
+  right: 0;
+  min-width: 0;
+}
+.watchlist-pane__picker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--space-2);
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.watchlist-pane__picker:hover {
+  background: var(--surface-hover);
+}
+.watchlist-pane__picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.watchlist-pane__confirm {
+  padding: var(--space-2) var(--space-3);
+}
+.watchlist-pane__confirm-actions {
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+.watchlist-pane__delete {
+  color: var(--down);
+}
+.watchlist-pane__state {
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+.watchlist-pane__heading {
+  font-weight: 600;
+}
+.watchlist-pane__empty {
+  padding: var(--space-3);
+}

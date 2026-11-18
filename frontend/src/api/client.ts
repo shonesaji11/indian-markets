@@ -45,5 +45,7 @@ export const http = {
   get: <T>(path: string, query?: Query) => request<T>(withQuery(path, query)),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: body === undefined ? undefined : JSON.stringify(body) }),
+  put: <T>(path: string) => request<T>(path, { method: 'PUT' }),
+  patch: <T>(path: string, body: unknown) => request<T>(path, { method: 'PATCH', body: JSON.stringify(body) }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 };

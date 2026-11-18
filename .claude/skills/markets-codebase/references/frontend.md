@@ -7,11 +7,12 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | File | Contents |
 |---|---|
 | `main.tsx` | React root, QueryClient, router |
-| `App.tsx` | `NAV` array + `<Routes>`: `/` OverviewPage, `/chart` ChartPage, `/scans` ScansPage (`/stats` redirects), `/sector?name=…` SectorPage, `/data` DataPage |
+| `App.tsx` | `NAV` array + `<Routes>`: `/` OverviewPage, `/chart` ChartPage, `/scans` ScansPage (`/stats` redirects), `/sector?name=…` SectorPage, `/watchlists` WatchlistsPage, `/data` DataPage |
 | `components/layout/AppShell.tsx` | `AppShell({title, nav, children})`, `NavItem` |
 | `pages/OverviewPage.tsx` | Market overview: BenchmarkTiles, BreadthCard, SectorCard, SectorBreadthCard (row → SectorPage), ScanCards. URL: `universe`, `as_of`, `ma` (MA periods), `min` (min stocks), `sector_view` (latest/rotation), `rotation_ma` (default 50), `ago` (rotation look-back, `agoCodec`, default 1w) |
 | `pages/SectorPage.tsx` | One sector's stocks (SectorStocksPanel), "All sectors" back to Overview. URL: `name`, `universe`, `as_of`, `ma`, `view` (table/charts), `page`, `sort`; from the Rotation view also `sector_view`, `rotation_ma` (the MA shown), `ago`, carried back |
-| `pages/ChartPage.tsx` | Full-width toolbar (InstrumentPicker, interval, indicator chips, IndicatorPicker) → window-height PriceChart with calc series and price/date range buttons in the card header (ranges are unsaved page state, cleared on stock/interval change and by Esc), plus RelatedList beside it when opened from a list. URL: `instrument`, `interval`, `ind`, `list` (id of a stored ChartList) |
+| `pages/ChartPage.tsx` | Full-width toolbar (InstrumentPicker, interval, indicator chips, IndicatorPicker) → window-height PriceChart with calc series and price/date range buttons in the card header (ranges are unsaved page state, cleared on stock/interval change and by Esc), plus RelatedList beside it when opened from a list; `WatchlistStar` in the chart header; `sidePane` prop (render prop taking `SidePaneProps` from `RelatedList.tsx`) replaces the side list. URL: `instrument`, `interval`, `ind`, `list` (id of a stored ChartList) |
+| `pages/WatchlistsPage.tsx` | `ChartPage` with `WatchlistPane` as its side pane. URL: `wl` (list id; unknown/missing = your first list) + the chart's params |
 | `pages/ScansPage.tsx` | Custom scans: FilterBuilder + SavedScans + ScanResultsTable (`useScanRun`, debounced, half-filled conditions pruned). URL: `f` (filter JSON), `universe`, `as_of`, `until`, `idx`, `sort`, `scan` (loaded saved id). With a past `as_of`, BasketPerformance card + since columns (`until` = window end, default latest) |
 | `pages/DataPage.tsx` | IngestPanel, CoverageTable, IngestRunsTable |
 
@@ -19,9 +20,9 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 
 | File | Contents |
 |---|---|
-| `client.ts` | `http` (get/post/delete on `BASE = '/api'`, throws on error; array query values become repeated params) |
-| `types.ts` | `INTERVALS`, `Interval`, `ParamValue`, `Instrument`, `Candle`, `CandleSeries`, `IndicatorInfo`, `CalcPoint`, `CalcSeries`, `CalcDefinition`, `CoverageRow`, `IngestRun`, `MarketRow`, `Breadth`, `ScanMetric`, `ScanResult`, `MarketOverview`, `Watchlist`; custom scans: `ScanGroup`, `ScanCondition`, `ScanOperand`, `ScanRight`, `ScanOp`, `ScanField`, `ScanDefinition`, `ScanRequest`, `ScanRunResult`, `ScanColumn`, `ScanRow`, `SavedScan`, `SectorBreadth`, `SectorBreadthRow`, `SectorRotation`, `SectorRotationRow` (mirror `backend/.../api/schemas.py` and router dicts) |
-| `queries.ts` | `keys` (query keys); hooks `useInstrumentSearch`, `useCandles`, `useIndicators`, `useCalcDefinitions`, `calcSeriesQuery`/`useCalcSeries`/`useCalcSeriesList`, `useCoverage`, `useIngestRuns`, `useIngest` (+ `IngestRequest`), `useSyncInstruments`, `useMarketOverview`, `useWatchlists`, `useScanFields`, `useScanRun`, `useSavedScans`, `useSaveScan`, `useDeleteScan`, `useSectorBreadth`, `useSectorRotation` (disabled until `ago` is set); `useCandles(id, interval, start?)` |
+| `client.ts` | `http` (get/post/put/patch/delete on `BASE = '/api'`, throws on error; array query values become repeated params) |
+| `types.ts` | `INTERVALS`, `Interval`, `ParamValue`, `Instrument`, `Candle`, `CandleSeries`, `IndicatorInfo`, `CalcPoint`, `CalcSeries`, `CalcDefinition`, `CoverageRow`, `IngestRun`, `MarketRow`, `Breadth`, `ScanMetric`, `ScanResult`, `MarketOverview`, `Watchlist`, `MyWatchlist` (your list + `member_ids` in order added), `WatchlistQuote`; custom scans: `ScanGroup`, `ScanCondition`, `ScanOperand`, `ScanRight`, `ScanOp`, `ScanField`, `ScanDefinition`, `ScanRequest`, `ScanRunResult`, `ScanColumn`, `ScanRow`, `SavedScan`, `SectorBreadth`, `SectorBreadthRow`, `SectorRotation`, `SectorRotationRow` (mirror `backend/.../api/schemas.py` and router dicts) |
+| `queries.ts` | `keys` (query keys); hooks `useInstrumentSearch`, `useCandles`, `useIndicators`, `useCalcDefinitions`, `calcSeriesQuery`/`useCalcSeries`/`useCalcSeriesList`, `useCoverage`, `useIngestRuns`, `useIngest` (+ `IngestRequest`), `useSyncInstruments`, `useMarketOverview`, `useWatchlists`, your lists: `useMyWatchlists`, `useWatchlistQuotes(id)`, `useCreateWatchlist`, `useRenameWatchlist`, `useDeleteWatchlist`, `useSetWatchlistMember` (`member: true/false`); `useScanFields`, `useScanRun`, `useSavedScans`, `useSaveScan`, `useDeleteScan`, `useSectorBreadth`, `useSectorRotation` (disabled until `ago` is set); `useCandles(id, interval, start?)` |
 
 ## Shared components (reuse before writing new ones)
 
@@ -32,6 +33,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `components/ui/Card.tsx` | `Card` (title, subtitle, actions, flush, divided) |
 | `components/ui/DataTable.tsx` | `DataTable<T>` + `Column<T>` (generic sortable table; `onRowClick(row, shown)` also gets the rows in displayed order; sort is internal via `initialSort`, or controlled via `sort`/`onSortChange`), `SortState`, `sortCodec` (`-key` = descending), `sortRows(rows, get, desc)` (same ordering anywhere) |
 | `components/ui/Feedback.tsx` | `Badge`, `EmptyState`, `ErrorMessage`, `Skeleton`, `Delta` (signed change), `Chip` (`colorControl` slot replaces its dot) |
+| `components/ui/Popover.tsx` | `Popover({trigger, open, onClose, align})`: small panel dropping down under its trigger (closes on Esc / click outside via `useDismiss`); `.ui-popover__item` / `__section` row styles. Use for menus and quick pickers instead of a modal |
 | `components/ui/SwatchPicker.tsx` | `SwatchPicker` (color dot that opens a palette; `taken` marks colors in use) |
 | `components/ui/Field.tsx` | `Field`, `TextInput`, `Checkbox`, `SegmentedControl<T>`, `Select<T>`, `SelectOption` |
 | `components/ui/Bars.tsx` | `Meter`, `SegmentBar`/`Segment`, `DivergingBars`/`DivergingItem` |
@@ -65,8 +67,11 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `sectors/sectorLinks.ts` | `sectorHref(industry, ctx)`, `overviewHref(ctx)` (carry universe / as_of / MAs, and the rotation view's MA + look-back when `ctx.rotation` is set), `DEFAULT_MAS`, `DEFAULT_ROTATION_MA` (50), `DEFAULT_ROTATION_AGO` (1w), `DEFAULT_SECTOR_SORT`, `DEFAULT_UNIVERSE`, `STOCK_UNIVERSES` (watchlists offered in the Overview and Scans universe dropdowns: nifty50, nifty500, niftytotalmarket, nse_traded) |
 | `sectors/SectorStocksPanel.tsx` | `StocksView` ('table' | 'charts'); one sector's stocks via `useScanRun({industry, columns: SMAs})`; Table (ScanResultsTable) or Charts (ChartGrid); both open the chart with the sector's stocks (in the table's sort) as the side list; `universeLabel` names it |
 | `charts/chartList.ts` | `ChartList`/`ChartListItem`/`ChartListInfo`, `useOpenChart()` → `(instrumentId, list?)`: opens the 1d chart and stores the list in sessionStorage under the URL's `list` id (last 10 kept); `loadChartList(id)`, `toListItems(rows)` (MarketRow/ScanRow → items), `shortSymbol`. Use this for every place that opens a chart from a list |
-| `charts/RelatedList.tsx` | `RelatedList({list, current, onSelect, open, onOpenChange})`: chart page side pane; click or ↑/↓ (J/K) steps through; collapses to a rail (remembered via `markets.chart.listOpen`); stacks under the chart below 900px |
+| `charts/RelatedList.tsx` | `RelatedList({list, current, onSelect, open, onOpenChange, toolbar, onRemove, empty})`: chart page side pane (`toolbar` replaces the title, `onRemove` adds a ✕ per row, items show `close`/`note` when set); click or ↑/↓ (J/K) steps through; collapses to a rail (remembered via `markets.chart.listOpen`); stacks under the chart below 900px |
 | `charts/ChartGrid.tsx` | `GridItem` ({instrument_id, title, price, change}); `ChartGrid({items, onSelect, page, onPageChange, rows=4, months=6})`: paged grid of compact candle charts; columns = as many 240px+ tiles as fit (measured), page = columns × rows so pages are always full; fetches only the visible page; tile header shows price + change; one "Charts by TradingView" credit per grid |
+| `watchlists/WatchlistStar.tsx` | `WatchlistStar({instrumentId})`: ☆/★ in the chart header; Popover with a tick per list (adds/removes) and a NameForm that creates a list with this stock |
+| `watchlists/WatchlistPane.tsx` | `WatchlistPane(SidePaneProps)`: Watchlists tab side pane; list picker Popover (+ new list), ✎ rename in place, delete confirm Popover, rows via `RelatedList` (close, change, stale-bar date note, ✕ remove); charts the list's first stock when none is charted; states: loading, no lists (create box), empty list, error |
+| `watchlists/NameForm.tsx` | `NameForm({initial, placeholder, submitLabel, onSubmit, onCancel})`: name box + button; shows the server's error (duplicate name) under it |
 
 ## Utilities and styles
 
@@ -78,6 +83,7 @@ React 18 + TypeScript + Vite, TanStack Query, react-router v6, lightweight-chart
 | `hooks/useUrlState.ts` | `useUrlState(key, fallback?, codec?)`: useState stored in a query param (replace, not push; fallback omitted from URL); `UrlCodec<T>`, `boolCodec`, `intCodec`, `intListCodec`; `useUrlUpdate()` sets several params in one update (separate setters in one event overwrite each other). Use for every page filter. |
 | `hooks/useElementWidth.ts` | `useElementWidth()` → `[callbackRef, width]` (ResizeObserver; works for elements that mount late) |
 | `hooks/useDebouncedValue.ts` | `useDebouncedValue(value, delayMs)` |
+| `hooks/useDismiss.ts` | `useDismiss(ref, open, onDismiss)`: Escape (marked `defaultPrevented`) or a press outside `ref` closes a pop-up (Popover, SwatchPicker) |
 | `hooks/useTheme.ts` | `ThemePreference`, `useThemePreference()`, `useThemeVersion()` (re-render charts on theme change) |
 | `components/layout/layout.css` | Shell + `.page` (max 1440px); `.page--wide` for full-width pages (Chart) |
 | `styles/tokens.css`, `global.css` | Design tokens (colours, spacing; light/dark) and base styles; per-area CSS sits next to components |

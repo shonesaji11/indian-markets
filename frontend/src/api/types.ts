@@ -148,6 +148,26 @@ export interface Watchlist {
   updated_at: string;
 }
 
+/** One of your own lists; `member_ids` in the order you added them. */
+export interface MyWatchlist {
+  watchlist_id: string;
+  name: string;
+  member_ids: number[];
+}
+
+/** A stock in one of your lists with its last stored daily bar (all null if none stored yet). */
+export interface WatchlistQuote {
+  instrument_id: number;
+  exchange: string;
+  symbol: string;
+  name: string | null;
+  instrument_type: string | null;
+  ts: string | null;
+  close: number | null;
+  /** Fraction vs the previous bar. */
+  pct_change: number | null;
+}
+
 // --- Custom scans (backend engine/screener.py) ---
 
 export type ScanOp = 'gt' | 'gte' | 'lt' | 'lte' | 'crosses_above' | 'crosses_below';

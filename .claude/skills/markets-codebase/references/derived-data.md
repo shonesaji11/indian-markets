@@ -43,3 +43,5 @@ Commands run from `backend/` (`.venv\Scripts\markets.exe ...`). When `markets se
 
 ## Inputs that are not derived (source data)
 `candles`, `candle_revisions`, `instruments`, `instrument_provider_map`, `instrument_tags`, `watchlists`, `watchlist_members`, `ingestion_runs`, `saved_scans`. Changing any of these is what triggers the rebuilds above.
+
+Your own watchlists (`watchlists.source = 'manual'`, Watchlists tab) are source data too, but they need **no rebuild**: they aren't in `BREADTH_UNIVERSES`, so they never feed `sector_breadth`. Their members are part of the nightly download targets and the DQ stale / short-history checks from the next run on; their prices in the Watchlists tab are read live from `candles`.

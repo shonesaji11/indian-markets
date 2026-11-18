@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useCalcSeriesList, useCandles, useIngest } from '@/api/queries';
 import { INTERVALS, type Interval } from '@/api/types';
 import {
@@ -19,8 +19,9 @@ import {
 import { IndicatorPicker } from '@/features/indicators/IndicatorPicker';
 import { SERIES_SLOTS, isOverlay, paramsLabel, toChartSeries } from '@/features/indicators/toChartSeries';
 import { loadChartList } from '@/features/charts/chartList';
-import { RelatedList } from '@/features/charts/RelatedList';
+import { RelatedList, type SidePaneProps } from '@/features/charts/RelatedList';
 import { InstrumentPicker } from '@/features/instruments/InstrumentPicker';
+import { WatchlistStar } from '@/features/watchlists/WatchlistStar';
 import { useThemeVersion } from '@/hooks/useTheme';
 import { useUrlState } from '@/hooks/useUrlState';
 import { cssVar, fmt } from '@/lib/format';
@@ -39,7 +40,8 @@ const LIST_OPEN_KEY = 'markets.chart.listOpen';
 /** Fill the window below the header and toolbar, but never shorter than a usable chart. */
 const CHART_HEIGHT = 'max(420px, calc(100vh - 250px))';
 
-export function ChartPage() {
+/** The chart, with the list it was opened from beside it; `sidePane` replaces that list (Watchlists tab). */
+export function ChartPage({ sidePane }: { sidePane?: (props: SidePaneProps) => ReactNode }) {
   const [instrumentParam, setInstrument] = useUrlState('instrument');
   const instrumentId = instrumentParam ? Number(instrumentParam) : undefined;
   const [intervalParam, setInterval] = useUrlState('interval', '1d');
@@ -156,7 +158,9 @@ export function ChartPage() {
         </div>
       </Card>
 
-      <div className={`chart-layout${!list ? ' chart-layout--single' : listOpen ? '' : ' chart-layout--closed'}`}>
+      <div
+        className={`chart-layout${!list && !sidePane ? ' chart-layout--single' : !listOpen ? ' chart-layout--closed' : sidePane ? ' chart-layout--wide' : ''}`}
+      >
         <Card
           title={
             instrument ? (
@@ -183,6 +187,7 @@ export function ChartPage() {
           actions={
             instrument && (
               <>
+                <WatchlistStar instrumentId={instrument.instrument_id} />
                 {ohlc.length > 0 && (
                   <>
                     <Button
@@ -251,15 +256,22 @@ export function ChartPage() {
             </div>
           )}
         </Card>
-        {list && (
-          <RelatedList
-            list={list}
-            current={instrumentId}
-            onSelect={(id) => setInstrument(String(id))}
-            open={listOpen}
-            onOpenChange={setListOpen}
-          />
-        )}
+        {sidePane
+          ? sidePane({
+              current: instrumentId,
+              onSelect: (id) => setInstrument(String(id)),
+              open: listOpen,
+              onOpenChange: setListOpen,
+            })
+          : list && (
+              <RelatedList
+                list={list}
+                current={instrumentId}
+                onSelect={(id) => setInstrument(String(id))}
+                open={listOpen}
+                onOpenChange={setListOpen}
+              />
+            )}
       </div>
     </div>
   );

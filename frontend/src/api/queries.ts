@@ -19,6 +19,7 @@ import type {
   Instrument,
   Interval,
   MarketOverview,
+  MyWatchlist,
   ParamValue,
   SavedScan,
   ScanAgo,
@@ -31,6 +32,7 @@ import type {
   SectorBreadth,
   SectorRotation,
   Watchlist,
+  WatchlistQuote,
 } from './types';
 
 export const keys = {
@@ -46,6 +48,8 @@ export const keys = {
   scanRun: (req: ScanRequest) => ['scan-run', req] as const,
   scanPerformance: (req: ScanPerformanceRequest | undefined) => ['scan-performance', req] as const,
   savedScans: ['saved-scans'] as const,
+  myWatchlists: ['my-watchlists'] as const,
+  watchlistQuotes: (id: string) => ['watchlist-quotes', id] as const,
 };
 
 export function useInstrumentSearch(q: string, exchange?: string) {
@@ -166,6 +170,53 @@ export function useMarketOverview(universe: string, asOf?: string) {
 export function useWatchlists() {
   return useQuery({ queryKey: ['watchlists'] as const, queryFn: () => http.get<Watchlist[]>('/watchlists') });
 }
+
+/** Your own lists (not the NSE universes), by name. */
+export function useMyWatchlists() {
+  return useQuery({ queryKey: keys.myWatchlists, queryFn: () => http.get<MyWatchlist[]>('/watchlists/mine') });
+}
+
+/** A list's stocks in the order added, with their last stored close and day change. */
+export function useWatchlistQuotes(watchlistId: string | undefined) {
+  return useQuery({
+    queryKey: keys.watchlistQuotes(watchlistId ?? ''),
+    queryFn: () => http.get<WatchlistQuote[]>(`/watchlists/mine/${watchlistId}/quotes`),
+    enabled: !!watchlistId,
+  });
+}
+
+/** Refreshes your lists afterwards; `quotes` also refreshes the lists' stock rows (membership changes). */
+function useWatchlistMutation<V, R>(mutationFn: (vars: V) => Promise<R>, quotes = false) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: keys.myWatchlists });
+      if (quotes) client.invalidateQueries({ queryKey: ['watchlist-quotes'] });
+    },
+  });
+}
+
+export const useCreateWatchlist = () =>
+  useWatchlistMutation((name: string) => http.post<MyWatchlist>('/watchlists/mine', { name }));
+
+export const useRenameWatchlist = () =>
+  useWatchlistMutation(({ id, name }: { id: string; name: string }) =>
+    http.patch<{ renamed: string }>(`/watchlists/mine/${id}`, { name }),
+  );
+
+export const useDeleteWatchlist = () =>
+  useWatchlistMutation((id: string) => http.delete<{ deleted: string }>(`/watchlists/mine/${id}`));
+
+/** Put a stock in (`member: true`) or take it out of one of your lists; repeating either is a no-op. */
+export const useSetWatchlistMember = () =>
+  useWatchlistMutation(
+    ({ id, instrumentId, member }: { id: string; instrumentId: number; member: boolean }): Promise<unknown> => {
+      const path = `/watchlists/mine/${id}/members/${instrumentId}`;
+      return member ? http.put<{ added: boolean }>(path) : http.delete<{ removed: boolean }>(path);
+    },
+    true,
+  );
 
 export function useScanFields() {
   return useQuery({ queryKey: keys.scanFields, queryFn: () => http.get<ScanField[]>('/scans/fields'), staleTime: Infinity });

@@ -381,6 +381,10 @@ class DuckCalcRepository:
         return rows
 
 
+MANUAL = "manual"  # watchlists.source of the lists you make yourself
+MAX_NAME = 60
+
+
 class DuckWatchlistRepository:
     def __init__(self, db: Database):
         self._db = db
@@ -444,6 +448,95 @@ class DuckWatchlistRepository:
             GROUP BY ALL ORDER BY w.name
             """,
         )
+
+    # Your own lists (source = MANUAL): created and edited by hand, never touched by the NSE sync.
+
+    def manual_lists(self) -> list[dict[str, Any]]:
+        """Your lists by name, each with its current members in the order they were added."""
+        rows = _records(
+            self._db.cursor(),
+            """
+            SELECT w.watchlist_id, w.name,
+                   list(m.instrument_id ORDER BY m.added_at, m.instrument_id)
+                       FILTER (WHERE m.instrument_id IS NOT NULL) AS member_ids
+            FROM watchlists w
+            LEFT JOIN watchlist_members m ON m.watchlist_id = w.watchlist_id AND m.removed_at IS NULL
+            WHERE w.source = ?
+            GROUP BY w.watchlist_id, w.name ORDER BY lower(w.name), w.watchlist_id
+            """,
+            [MANUAL],
+        )
+        return [{**r, "member_ids": r["member_ids"] or []} for r in rows]
+
+    def create_manual(self, name: str) -> dict[str, Any]:
+        name = self._check_name(name)
+        watchlist_id = _new_id()
+        self._db.cursor().execute(
+            "INSERT INTO watchlists (watchlist_id, name, source) VALUES (?, ?, ?)", [watchlist_id, name, MANUAL])
+        return {"watchlist_id": watchlist_id, "name": name, "member_ids": []}
+
+    def rename_manual(self, watchlist_id: str, name: str) -> None:
+        self._require_manual(watchlist_id)
+        name = self._check_name(name, exclude=watchlist_id)
+        self._db.cursor().execute(
+            "UPDATE watchlists SET name = ?, updated_at = now() WHERE watchlist_id = ?", [name, watchlist_id])
+
+    def delete_manual(self, watchlist_id: str) -> None:
+        self._require_manual(watchlist_id)
+        with self._db.transaction() as cur:
+            cur.execute("DELETE FROM watchlist_members WHERE watchlist_id = ?", [watchlist_id])
+            cur.execute("DELETE FROM watchlists WHERE watchlist_id = ?", [watchlist_id])
+
+    def add_member(self, watchlist_id: str, instrument_id: int) -> bool:
+        """Add a stock to the end of one of your lists. False (no change) if it's already in it."""
+        self._require_manual(watchlist_id)
+        with self._db.transaction() as cur:
+            if cur.execute("SELECT 1 FROM instruments WHERE instrument_id = ?", [instrument_id]).fetchone() is None:
+                raise KeyError(f"instrument {instrument_id} not found")
+            added = cur.execute(
+                """
+                INSERT INTO watchlist_members (watchlist_id, instrument_id, added_at)
+                SELECT ?, ?, now() WHERE NOT EXISTS (
+                    SELECT 1 FROM watchlist_members
+                    WHERE watchlist_id = ? AND instrument_id = ? AND removed_at IS NULL)
+                """,
+                [watchlist_id, instrument_id, watchlist_id, instrument_id],
+            ).fetchone()[0]
+            cur.execute("UPDATE watchlists SET updated_at = now() WHERE watchlist_id = ?", [watchlist_id])
+        return added > 0
+
+    def remove_member(self, watchlist_id: str, instrument_id: int) -> bool:
+        """Take a stock out of one of your lists. False (no change) if it wasn't in it."""
+        self._require_manual(watchlist_id)
+        with self._db.transaction() as cur:
+            removed = cur.execute(
+                "UPDATE watchlist_members SET removed_at = now()"
+                " WHERE watchlist_id = ? AND instrument_id = ? AND removed_at IS NULL",
+                [watchlist_id, instrument_id],
+            ).fetchone()[0]
+            cur.execute("UPDATE watchlists SET updated_at = now() WHERE watchlist_id = ?", [watchlist_id])
+        return removed > 0
+
+    def _require_manual(self, watchlist_id: str) -> None:
+        row = self._db.cursor().execute(
+            "SELECT 1 FROM watchlists WHERE watchlist_id = ? AND source = ?", [watchlist_id, MANUAL]).fetchone()
+        if row is None:
+            raise KeyError(f"watchlist {watchlist_id} not found")
+
+    def _check_name(self, name: str, exclude: Optional[str] = None) -> str:
+        """Trimmed name; ValueError if empty, too long or already used by another of your lists."""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("Enter a name")
+        if len(name) > MAX_NAME:
+            raise ValueError(f"Keep the name to {MAX_NAME} characters or fewer")
+        taken = self._db.cursor().execute(
+            "SELECT 1 FROM watchlists WHERE source = ? AND lower(name) = lower(?) AND watchlist_id IS DISTINCT FROM ?",
+            [MANUAL, name, exclude],
+        ).fetchone()
+        if taken:
+            raise ValueError("You already have a list with that name")
+        return name
 
     def set_tags(self, key: str, values: dict[int, str], source: str) -> int:
         if not values:
@@ -512,6 +605,33 @@ class DuckMarketRepository:
             int(iid): [{"ts": ts.isoformat(), "close": float(c)} for ts, c in zip(g["ts"], g["close"])]
             for iid, g in df.groupby("instrument_id")
         }
+
+    def latest_quotes(self, instrument_ids: Sequence[int]) -> dict[int, dict[str, Any]]:
+        """Last stored daily bar per instrument: its `ts`, `close` and `pct_change` (fraction, vs the
+        bar before; None with only one bar or a zero/missing previous close). No entry = no daily bars."""
+        if not instrument_ids:
+            return {}
+        ids = pd.DataFrame({"instrument_id": pd.Series(list(instrument_ids), dtype="int64")})
+        cur = self._db.cursor()
+        cur.register("universe", ids)
+        rows = _records(
+            cur,
+            """
+            SELECT instrument_id, ts,
+                   CASE WHEN isnan(close) THEN NULL ELSE close END AS close,
+                   CASE WHEN isnan(close / nullif(prev_close, 0)) THEN NULL
+                        ELSE close / nullif(prev_close, 0) - 1 END AS pct_change
+            FROM (
+                SELECT c.instrument_id, c.ts, c.close,
+                       lag(c.close) OVER (PARTITION BY c.instrument_id ORDER BY c.ts) AS prev_close
+                FROM candles c JOIN universe u USING (instrument_id)
+                WHERE c.timeframe = '1d'
+            )
+            QUALIFY row_number() OVER (PARTITION BY instrument_id ORDER BY ts DESC) = 1
+            """,
+        )
+        cur.unregister("universe")
+        return {int(r.pop("instrument_id")): r for r in rows}
 
     def daily_bars(self, instrument_ids: Sequence[int], as_of: datetime, bars: int) -> pd.DataFrame:
         """Last `bars` daily candles per instrument up to `as_of`, long format, oldest first."""

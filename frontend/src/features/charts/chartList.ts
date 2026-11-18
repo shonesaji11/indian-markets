@@ -7,6 +7,10 @@ export interface ChartListItem {
   symbol: string;
   /** Day's change (fraction) on the list's date. */
   change: number | null;
+  /** Last close, shown when set (watchlists). */
+  close?: number | null;
+  /** Short note after the symbol, e.g. the date of a stock's last bar when it's behind the rest. */
+  note?: string;
 }
 
 /** Where a chart was opened from: shown as the chart page's side pane, in the order you saw it. */

@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from markets.api.deps import get_container
+from markets.api.schemas import WatchlistNameIn
 from markets.bootstrap import Container
 from markets.universes import DEFAULT_UNIVERSE
 
@@ -54,6 +55,73 @@ def breadth_job(backfill: bool = False, c: Container = Depends(get_container)) -
 @router.get("/watchlists")
 def watchlists(c: Container = Depends(get_container)) -> list[dict]:
     return c.watchlists.all()
+
+
+@router.get("/watchlists/mine")
+def my_watchlists(c: Container = Depends(get_container)) -> list[dict]:
+    """Your own lists by name, each with `member_ids` in the order added."""
+    return c.watchlists.manual_lists()
+
+
+@router.post("/watchlists/mine")
+def create_watchlist(body: WatchlistNameIn, c: Container = Depends(get_container)) -> dict:
+    try:
+        return c.watchlists.create_manual(body.name)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
+@router.patch("/watchlists/mine/{watchlist_id}")
+def rename_watchlist(watchlist_id: str, body: WatchlistNameIn, c: Container = Depends(get_container)) -> dict:
+    try:
+        c.watchlists.rename_manual(watchlist_id, body.name)
+    except KeyError:
+        raise HTTPException(404, "watchlist not found")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    return {"renamed": watchlist_id}
+
+
+@router.delete("/watchlists/mine/{watchlist_id}")
+def delete_watchlist(watchlist_id: str, c: Container = Depends(get_container)) -> dict:
+    try:
+        c.watchlists.delete_manual(watchlist_id)
+    except KeyError:
+        raise HTTPException(404, "watchlist not found")
+    return {"deleted": watchlist_id}
+
+
+@router.put("/watchlists/mine/{watchlist_id}/members/{instrument_id}")
+def add_to_watchlist(watchlist_id: str, instrument_id: int, c: Container = Depends(get_container)) -> dict:
+    """Add a stock at the end of the list; adding one that's already there changes nothing."""
+    try:
+        return {"added": c.watchlists.add_member(watchlist_id, instrument_id)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc.args[0]))
+
+
+@router.delete("/watchlists/mine/{watchlist_id}/members/{instrument_id}")
+def remove_from_watchlist(watchlist_id: str, instrument_id: int, c: Container = Depends(get_container)) -> dict:
+    try:
+        return {"removed": c.watchlists.remove_member(watchlist_id, instrument_id)}
+    except KeyError as exc:
+        raise HTTPException(404, str(exc.args[0]))
+
+
+@router.get("/watchlists/mine/{watchlist_id}/quotes")
+def watchlist_quotes(watchlist_id: str, c: Container = Depends(get_container)) -> list[dict]:
+    """The list's stocks in the order added, each with its last stored daily close and day change
+    (`ts` = that bar's date; null when nothing is stored yet)."""
+    wl = next((w for w in c.watchlists.manual_lists() if w["watchlist_id"] == watchlist_id), None)
+    if wl is None:
+        raise HTTPException(404, "watchlist not found")
+    quotes = c.market.latest_quotes(wl["member_ids"])
+    empty = {"ts": None, "close": None, "pct_change": None}
+    return [
+        {"instrument_id": i.instrument_id, "exchange": i.exchange, "symbol": i.symbol, "name": i.name,
+         "instrument_type": i.instrument_type, **quotes.get(i.instrument_id, empty)}
+        for i in (c.instruments.get(n) for n in wl["member_ids"]) if i
+    ]
 
 
 @router.get("/watchlists/{watchlist_id}/members")

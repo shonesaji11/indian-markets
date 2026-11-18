@@ -43,12 +43,27 @@ interface BasketPerformanceProps {
   title: string;
 }
 
-/** Equal-weight basket of the scan results vs the benchmark, bought at the open after the scan date. */
-export function BasketPerformance({ perf, loading, error, title }: BasketPerformanceProps) {
+/** "12 of 13 stocks · equal weight · picked 14 Nov, bought at the next open · 5 sessions". */
+export function performanceSubtitle(perf: ScanPerformance): string {
+  return `${perf.counted} of ${perf.total} stocks · equal weight · picked ${fmt.shortDate(perf.start)}, bought at the next open · ${perf.sessions} session${perf.sessions === 1 ? '' : 's'}`;
+}
+
+/** The benchmark's change over the whole window (null without a benchmark). */
+export const benchmarkChange = (perf: ScanPerformance) => (perf.benchmark ? last(perf.benchmark.points) : null);
+
+interface PerformanceSummaryProps {
+  perf: ScanPerformance;
+  /** Label for the basket's tile and line. */
+  name?: string;
+  /** Last tile shows how many stocks beat the benchmark instead of how many are up / down. */
+  beatCount?: boolean;
+}
+
+/** Tiles (basket, benchmark, the gap between them, up / down or beat count) and both lines since the pick. */
+export function PerformanceSummary({ perf, name = 'Basket', beatCount = false }: PerformanceSummaryProps) {
   const themeVersion = useThemeVersion();
   const lines = useMemo<LineSpec[]>(() => {
-    if (!perf) return [];
-    const out: LineSpec[] = [{ id: 'basket', label: 'Basket', color: cssVar('--series-1'), data: toLine(perf.basket) }];
+    const out: LineSpec[] = [{ id: 'basket', label: name, color: cssVar('--series-1'), data: toLine(perf.basket) }];
     if (perf.benchmark)
       out.push({
         id: 'bench',
@@ -57,8 +72,38 @@ export function BasketPerformance({ perf, loading, error, title }: BasketPerform
         data: toLine(perf.benchmark.points),
       });
     return out;
-  }, [perf, themeVersion]);
+  }, [perf, name, themeVersion]);
 
+  const basket = last(perf.basket);
+  const bench = benchmarkChange(perf);
+  const benchLabel = perf.benchmark?.label ?? 'benchmark';
+  const changes = perf.stocks.flatMap((s) => (s.change == null ? [] : [s.change]));
+  const up = changes.filter((c) => c > 0).length;
+  const down = changes.filter((c) => c < 0).length;
+  return (
+    <>
+      <div className="scan-perf__tiles">
+        <StatTile label={name} value={pct(basket)} />
+        <StatTile label={perf.benchmark?.label ?? 'Benchmark'} value={pct(bench)} />
+        <StatTile label={`${name} vs ${benchLabel}`} value={pct(basket != null && bench != null ? basket - bench : null)} />
+        {beatCount ? (
+          <StatTile
+            label={`Beat ${benchLabel}`}
+            value={bench == null ? '—' : `${changes.filter((c) => c > bench).length} of ${changes.length}`}
+          />
+        ) : (
+          <StatTile label="Up / down" value={`${up} / ${down}`} />
+        )}
+      </div>
+      {perf.counted > 0 && (
+        <LineChart lines={lines} height={220} format={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`} />
+      )}
+    </>
+  );
+}
+
+/** Equal-weight basket of the scan results vs the benchmark, bought at the open after the scan date. */
+export function BasketPerformance({ perf, loading, error, title }: BasketPerformanceProps) {
   if (error) {
     return (
       <Card title="Performance">
@@ -74,27 +119,9 @@ export function BasketPerformance({ perf, loading, error, title }: BasketPerform
     );
   }
 
-  const basket = last(perf.basket);
-  const bench = perf.benchmark ? last(perf.benchmark.points) : null;
-  const up = perf.stocks.filter((s) => (s.change ?? 0) > 0).length;
-  const down = perf.stocks.filter((s) => (s.change ?? 0) < 0).length;
   return (
-    <Card
-      title={title}
-      subtitle={`${perf.counted} of ${perf.total} stocks · equal weight · picked ${fmt.shortDate(perf.start)}, bought at the next open · ${perf.sessions} session${perf.sessions === 1 ? '' : 's'}`}
-    >
-      <div className="scan-perf__tiles">
-        <StatTile label="Basket" value={pct(basket)} />
-        <StatTile label={perf.benchmark?.label ?? 'Benchmark'} value={pct(bench)} />
-        <StatTile
-          label={`Basket vs ${perf.benchmark?.label ?? 'benchmark'}`}
-          value={pct(basket != null && bench != null ? basket - bench : null)}
-        />
-        <StatTile label="Up / down" value={`${up} / ${down}`} />
-      </div>
-      {perf.counted > 0 && (
-        <LineChart lines={lines} height={220} format={(v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`} />
-      )}
+    <Card title={title} subtitle={performanceSubtitle(perf)}>
+      <PerformanceSummary perf={perf} />
     </Card>
   );
 }

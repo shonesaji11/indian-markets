@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
 from typing import Any, Optional, Sequence
 
 import pandas as pd
@@ -135,13 +135,17 @@ class ScreenerService:
     def performance(self, instrument_ids: Sequence[int], start: datetime,
                     end: Optional[datetime] = None) -> dict[str, Any]:
         """Equal-weight buy-and-hold of `instrument_ids` picked on `start`'s session and bought at the
-        next session's open, up to `end` (default: latest stored), with the benchmark over the same sessions."""
+        next session's open, up to `end` (default: latest stored), with the benchmark over the same sessions.
+        A `start` that isn't a trading day (weekend, holiday) picks on the last session before it."""
         end = end or datetime.now()
         if end < start:
             raise ValueError("the Until date must be on or after the As of date")
         ids = list(dict.fromkeys(instrument_ids))
         bench = self.instruments.find(*self.benchmark.split(":", 1))
-        bars = self.market.daily_prices([*ids, *([bench.instrument_id] if bench else [])], start, end)
+        all_ids = [*ids, *([bench.instrument_id] if bench else [])]
+        pick = self.market.recent_sessions(all_ids, datetime.combine(start.date(), time.max), 1)
+        start = pick[0].to_pydatetime() if pick else start
+        bars = self.market.daily_prices(all_ids, start, end)
         perf = basket_performance(bars[bars["instrument_id"].isin(ids)], start)
         path = perf.path
         benchmark = None

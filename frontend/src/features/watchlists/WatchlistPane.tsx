@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   useCreateWatchlist,
   useDeleteWatchlist,
-  useMyWatchlists,
   useRenameWatchlist,
   useSetWatchlistMember,
   useWatchlistQuotes,
@@ -11,9 +10,10 @@ import type { WatchlistQuote } from '@/api/types';
 import { Button, ErrorMessage, Popover, Skeleton } from '@/components/ui';
 import type { ChartList } from '@/features/charts/chartList';
 import { RelatedList, type SidePaneProps } from '@/features/charts/RelatedList';
-import { useUrlState, useUrlUpdate } from '@/hooks/useUrlState';
+import { useUrlUpdate } from '@/hooks/useUrlState';
 import { fmt } from '@/lib/format';
 import { NameForm } from './NameForm';
+import { useActiveWatchlist } from './useActiveWatchlist';
 import './watchlists.css';
 
 /** Stocks in the list's order; a stock whose last bar is older than the list's newest shows that date. */
@@ -39,12 +39,8 @@ const TrashIcon = () => (
 
 /** The Watchlists tab's side pane: pick, create, rename or delete a list, and step through its stocks. */
 export function WatchlistPane({ current, onSelect, open, onOpenChange }: SidePaneProps) {
-  const lists = useMyWatchlists();
-  const [wlParam] = useUrlState('wl');
+  const { lists, all, active } = useActiveWatchlist();
   const update = useUrlUpdate();
-  const all = lists.data ?? [];
-  // A link to a deleted (or no) list falls back to your first one.
-  const active = all.find((w) => w.watchlist_id === wlParam) ?? all[0];
   const quotes = useWatchlistQuotes(active?.watchlist_id);
   const create = useCreateWatchlist();
   const rename = useRenameWatchlist();

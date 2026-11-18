@@ -40,8 +40,17 @@ const LIST_OPEN_KEY = 'markets.chart.listOpen';
 /** Fill the window below the header and toolbar, but never shorter than a usable chart. */
 const CHART_HEIGHT = 'max(420px, calc(100vh - 250px))';
 
-/** The chart, with the list it was opened from beside it; `sidePane` replaces that list (Watchlists tab). */
-export function ChartPage({ sidePane }: { sidePane?: (props: SidePaneProps) => ReactNode }) {
+interface ChartPageProps {
+  /** Replaces the list the chart was opened from (Watchlists tab). */
+  sidePane?: (props: SidePaneProps) => ReactNode;
+  /** Shown first in the toolbar (the Watchlists tab's Chart | Performance switch). */
+  toolbarStart?: ReactNode;
+  /** Replaces the toolbar and the chart, keeping the side pane (the Watchlists tab's Performance view). */
+  main?: ReactNode;
+}
+
+/** The chart, with the list it was opened from beside it. */
+export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
   const [instrumentParam, setInstrument] = useUrlState('instrument');
   const instrumentId = instrumentParam ? Number(instrumentParam) : undefined;
   const [intervalParam, setInterval] = useUrlState('interval', '1d');
@@ -123,8 +132,9 @@ export function ChartPage({ sidePane }: { sidePane?: (props: SidePaneProps) => R
 
   return (
     <div className="page page--wide">
-      <Card>
+      {!main && <Card>
         <div className="ui-row">
+          {toolbarStart && <span style={{ alignSelf: 'flex-end' }}>{toolbarStart}</span>}
           <Field label="Instrument">
             <InstrumentPicker value={instrument} onChange={(i) => setInstrument(String(i.instrument_id))} />
           </Field>
@@ -156,12 +166,12 @@ export function ChartPage({ sidePane }: { sidePane?: (props: SidePaneProps) => R
           <div style={{ flex: 1 }} />
           <IndicatorPicker onAdd={(sel) => setIndicators(addIndicator(indicators, sel))} />
         </div>
-      </Card>
+      </Card>}
 
       <div
         className={`chart-layout${!list && !sidePane ? ' chart-layout--single' : !listOpen ? ' chart-layout--closed' : sidePane ? ' chart-layout--wide' : ''}`}
       >
-        <Card
+        {main ?? <Card
           title={
             instrument ? (
               <span className="ui-row" style={{ alignItems: 'baseline', gap: 10 }}>
@@ -255,7 +265,7 @@ export function ChartPage({ sidePane }: { sidePane?: (props: SidePaneProps) => R
               />
             </div>
           )}
-        </Card>
+        </Card>}
         {sidePane
           ? sidePane({
               current: instrumentId,

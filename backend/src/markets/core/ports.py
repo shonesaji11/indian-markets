@@ -18,18 +18,38 @@ from markets.core.models import DateRange, Instrument, Interval, ProviderInstrum
 
 
 class MarketDataProvider(Protocol):
+    """A market data source. The rest of the app looks instruments up by name, so an adapter must
+    convert its source's own formats into the ones below. Nothing fails loudly if it doesn't: watchlists,
+    the overview, scans and breadth just come up empty.
+
+    `name` is a stable string: it keys each instrument's token in the database.
+    """
+
     name: str
 
     def list_instruments(self) -> Iterable[ProviderInstrument]:
-        """Full instrument universe the provider knows about."""
+        """Full instrument universe the provider knows about, each with `provider == self.name`.
+
+        - `exchange` is an uppercase code: "NSE", "BSE" (other segments may be listed too).
+        - NSE cash equities are named "<TICKER>-<SERIES>" ("RELIANCE-EQ", "BAJAJ-AUTO-EQ", "XYZ-BE")
+          with `instrument_type` "EQ": index constituents from NSE's lists are found as symbol + "-" + series.
+        - Indices have `instrument_type` "INDEX", and the ones named in universes.WATCHLISTS are listed
+          under exactly those names ("NSE:Nifty 50", "BSE:SENSEX", ...; matched case-insensitively).
+        - `provider_token` is a non-empty string, unique within its exchange, that `fetch_candles` accepts.
+        """
         ...
 
     def fetch_candles(self, provider_token: str, exchange: str, interval: Interval, window: DateRange) -> pd.DataFrame:
-        """Candles for one instrument. The provider handles its own paging and rate limits."""
+        """Candles for one instrument, in the shape described at the top of this module: sorted, no
+        duplicate timestamps, an empty frame of that shape when there are none. Daily bars are stamped
+        00:00 IST on the trading date; intraday bars are labelled by their start (09:15 to 15:29 IST).
+        The provider handles its own paging and rate limits, and raises (ideally ProviderError) once its
+        own retries are used up."""
         ...
 
     def last_trade_dates(self, exchange: str, tokens: Sequence[str]) -> dict[str, date]:
-        """Date of each instrument's last trade, from live quotes. Tokens without a quote are left out."""
+        """Date of each instrument's last trade, from live quotes, keyed by the same token strings
+        that were passed in. Tokens without a quote are left out."""
         ...
 
     def close(self) -> None:

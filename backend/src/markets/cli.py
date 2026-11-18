@@ -63,6 +63,7 @@ def main(argv: Optional[list[str]] = None) -> None:
     p.add_argument("--skip-instrument-sync", action="store_true")
     p.add_argument("--api", default="http://127.0.0.1:8000",
                    help="server to hand the job to if it holds the database lock")
+    p.add_argument("--scheduled", action="store_true", help="mark the summary as the scheduled nightly run")
 
     p = sub.add_parser("breadth", help="recompute stored sector breadth (last 10 days, or all history)")
     p.add_argument("--backfill", action="store_true", help="recompute every day since the first candle")
@@ -112,7 +113,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         # Linux/macOS say "Could not set lock on file"; Windows says "File is already open in ...".
         busy = any(s in str(exc).lower() for s in ("lock", "already open"))
         if args.command == "update" and busy:
-            _update_via_api(args.api, not args.skip_instrument_sync)
+            _update_via_api(args.api, not args.skip_instrument_sync, args.scheduled)
             return
         if args.command == "dq" and busy:
             print(f"database is in use by the API server; using {args.api}")
@@ -144,6 +145,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "update":
             report = c.daily_update.run(sync_instruments=not args.skip_instrument_sync)
             _print_report(report.to_dict())
+            _append_summary(report.to_dict(), args.scheduled)
             if report.failed and not report.ok:
                 raise SystemExit(1)
         elif args.command == "breadth":
@@ -233,10 +235,71 @@ def _print_dq_report(r: dict) -> None:
               f"{i['detail'] or ''}  [{i['status']}, seen {i['seen_count']}x] {i['issue_id']}")
 
 
-def _update_via_api(base_url: str, sync_instruments: bool) -> None:
+def _update_via_api(base_url: str, sync_instruments: bool, scheduled: bool) -> None:
     """The API server holds the DuckDB write lock; ask it to run the job instead."""
     print(f"database is in use by the API server; running the update through {base_url}")
-    _print_report(_post_api(base_url, "/api/jobs/daily-update", {"sync_instruments": sync_instruments}))
+    report = _post_api(base_url, "/api/jobs/daily-update", {"sync_instruments": sync_instruments})
+    _print_report(report)
+    _append_summary(report, scheduled)
+
+
+def summary_block(r: dict, scheduled: bool) -> str:
+    """A few plain lines per daily-update run for logs/nightly-summary.log. `r` is
+    DailyUpdateReport.to_dict(), directly or as JSON from the API (timestamps as strings)."""
+    start, end = (datetime.fromisoformat(str(r[k])) for k in ("started_at", "finished_at"))
+    mins = int((end - start).total_seconds() // 60)
+    took = f"{mins // 60}h{mins % 60:02d}m" if mins >= 60 else f"{mins}m"
+    lines = [f"{start:%Y-%m-%d}  {start:%H:%M}-{end:%H:%M} ({took})  {'scheduled' if scheduled else 'manual'}",
+             f"  stocks:   {r['ok']:,}/{r['targets']:,} ok, {r['failed']:,} failed ({r['retried']:,} retried)"]
+
+    bars = r["bars_written"]
+    if not bars:
+        lines.append("  bars:     0 (no new bars: market holiday?)")
+    elif r.get("new_instruments"):  # .get: a server started before these fields existed omits them
+        lines.append(f"  bars:     {bars:,} (existing stocks {bars - r['new_bars']:,}; "
+                     f"{r['new_instruments']:,} new stocks backfilled {r['new_bars']:,})")
+    else:
+        lines.append(f"  bars:     {bars:,}")
+    lines.append(f"  breadth:  {r['breadth_rows']:,} rows")
+
+    changed = [w for w in r["watchlists"] if w["added"] or w["removed"]]
+    lists = "; ".join(f"{w['watchlist_id']} +{w['added']} -{w['removed']}" for w in changed) or "no changes"
+    if changed and len(changed) < len(r["watchlists"]):
+        lists += "; others unchanged"
+    lines.append(f"  lists:    {lists}")
+
+    dq = r.get("data_quality")
+    if dq:
+        new, resolved = (sum(s[k] for s in dq["checks"].values()) for k in ("new", "resolved"))
+        parts = [f"{name} +{s['new']:,}" + (f" -{s['resolved']:,}" if s["resolved"] else "")
+                 for name, s in dq["checks"].items()
+                 if name != "short_history" and (s["new"] or s["resolved"])]
+        lines.append(f"  quality:  {dq['open']:,} open; +{new:,} new, -{resolved:,} resolved ({dq['mode']})"
+                     + (f": {', '.join(parts)}" if parts else ""))
+    else:
+        lines.append("  quality:  not run")
+
+    failed = r.get("failed_symbols", [])
+    if failed:
+        lines.append("  failed:   " + ", ".join(failed[:5]) + (f" +{len(failed) - 5} more" if len(failed) > 5 else ""))
+    else:
+        lines.append(f"  failed:   {r['failed']} (see update-{start:%Y-%m-%d}.log)" if r["failed"] else "  failed:   -")
+    other = len(r["errors"]) - r["failed"]
+    if other > 0:
+        lines.append(f"  errors:   {other} other (see update-{start:%Y-%m-%d}.log)")
+    return "\n".join(lines) + "\n\n"
+
+
+def _append_summary(r: dict, scheduled: bool) -> None:
+    from markets.config import BACKEND_DIR
+
+    path = BACKEND_DIR / "logs" / "nightly-summary.log"
+    try:  # the update itself has finished; a summary problem must not fail the run
+        path.parent.mkdir(exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(summary_block(r, scheduled))
+    except Exception as exc:
+        print(f"  warning: could not write {path.name}: {exc!r}")
 
 
 def _post_api(base_url: str, path: str, params: dict) -> dict:

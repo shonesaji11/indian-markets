@@ -11,11 +11,12 @@ Project root: `C:\Users\shone\OneDrive\Documents\Coding\Python\Indian Markets`. 
 
 ## 1. Did the nightly update finish?
 
-The update runs at 17:00 on weekdays (`backend\scripts\nightly-update.ps1`, about 45-50 minutes) and logs to `backend\logs\update-YYYY-MM-DD.log` (one file per day; each run starts with `==== <time> nightly update starting`).
+The update runs at 17:00 on weekdays (`backend\scripts\nightly-update.ps1`, about 1.5 hours for ~3,000 stocks) and logs to `backend\logs\update-YYYY-MM-DD.log` (one file per day; each run starts with `==== <time> nightly update starting`).
 
 - Open the log for the latest weekday run: today's date when you run in the evening as scheduled (if run on a weekend or before 17:00, the previous weekday's).
 - It must end with `==== <time> finished with exit code N`. If the starting line has no matching finished line, the update is still running or died: report that, with the last lines of the log, and stop. If the log file is missing, say the update didn't run.
 - Note the summary lines: `daily update: X/Y instruments ok, N failed`, errors (`error: ...`), and the data-quality lines (`data quality (incremental|full): ...` then one line per check with found/new/resolved).
+- Read the last few blocks of `backend\logs\nightly-summary.log` (one short block per run, kept indefinitely) and compare tonight with previous nights: failures, run time, bar counts, new stocks backfilled. Mention a trend (e.g. failures or run time creeping up) even when tonight looks fine.
 
 ## 2. Read the issues
 

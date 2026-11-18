@@ -28,6 +28,9 @@ class DailyUpdateReport:
     failed: int = 0
     retried: int = 0
     bars_written: int = 0
+    new_instruments: int = 0  # had no daily bars before this run, so got their full history
+    new_bars: int = 0  # bars written for those (included in bars_written)
+    failed_symbols: list[str] = field(default_factory=list)
     breadth_rows: int = 0
     data_quality: Optional[dict[str, Any]] = None  # DataQualityService.run() summary
     errors: list[str] = field(default_factory=list)
@@ -82,7 +85,8 @@ class DailyUpdateService:
                     report.errors.append(f"watchlist {watchlist_id}: {exc}")
                     log.exception("watchlist sync failed: %s", watchlist_id)
 
-        targets = set(self.market.tracked_daily_ids())
+        tracked = set(self.market.tracked_daily_ids())
+        targets = set(tracked)
         for w in self.watchlists.all():
             targets.update(self.watchlists.member_ids(w["watchlist_id"]))
         report.targets = len(targets)
@@ -90,7 +94,7 @@ class DailyUpdateService:
         t0 = time.monotonic()
         failures = {}
         for n, instrument_id in enumerate(sorted(targets), start=1):
-            self._ingest(instrument_id, report, failures)
+            self._ingest(instrument_id, report, failures, instrument_id not in tracked)
             if n % 50 == 0:
                 log.info("daily update: %d/%d instruments (%.0fs)", n, len(targets), time.monotonic() - t0)
 
@@ -100,8 +104,9 @@ class DailyUpdateService:
             time.sleep(self.retry_delay)
             for instrument_id in list(failures):
                 del failures[instrument_id]
-                self._ingest(instrument_id, report, failures)
+                self._ingest(instrument_id, report, failures, instrument_id not in tracked)
         report.failed = len(failures)
+        report.failed_symbols = [getattr(self.ingestion.instruments.get(i), "symbol", str(i)) for i in failures]
         report.errors.extend(f"instrument {i}: {e}" for i, e in failures.items())
 
         if self.breadth is not None:
@@ -124,10 +129,13 @@ class DailyUpdateService:
                  report.ok, report.failed, report.retried, report.bars_written)
         return report
 
-    def _ingest(self, instrument_id: int, report: DailyUpdateReport, failures: dict) -> None:
+    def _ingest(self, instrument_id: int, report: DailyUpdateReport, failures: dict, new: bool) -> None:
         result = self.ingestion.ingest(instrument_id, Interval.D1)
         if result.status == "ok":
             report.ok += 1
             report.bars_written += result.rows
+            if new and result.rows:
+                report.new_instruments += 1
+                report.new_bars += result.rows
         else:
             failures[instrument_id] = result.error

@@ -109,6 +109,9 @@ def test_daily_update_retries_failures_once(container, monkeypatch):
     assert report.ok == 4 and report.failed == 1  # the transient one recovered on the retry pass
     assert calls.count(transient) == 2 and calls.count(persistent) == 2  # retried once, not more
     assert len(report.errors) == 1 and "exceeding access rate" in report.errors[0]
+    persistent_symbol = next(s for s in ("TCS-EQ", "INFY-EQ") if container.instruments.provider_token(
+        container.instruments.find("NSE", s).instrument_id, provider.name) == persistent)
+    assert report.failed_symbols == [persistent_symbol]
 
 
 def test_daily_update_skips_retry_pass_when_all_ok(container, monkeypatch):
@@ -174,3 +177,93 @@ def test_daily_signals_macro_matches_pandas(container, reliance_id):
     assert row["sma_50"] == pytest.approx(c["close"].tail(50).mean())
     assert row["avg_volume_20d"] == pytest.approx(c["volume"].iloc[-21:-1].mean())
     assert row["gap_pct"] == pytest.approx(c["open"].iloc[-1] / c["close"].iloc[-2] - 1)
+
+
+def test_daily_update_counts_new_instruments(container):
+    first = container.daily_update.run(sync_instruments=False)
+    assert first.new_instruments == 5 and first.new_bars == first.bars_written > 0  # nothing stored yet
+
+    again = container.daily_update.run(sync_instruments=False)
+    assert again.new_instruments == 0 and again.new_bars == 0
+
+
+def _report(**overrides):
+    r = {"started_at": "2026-11-18T18:00:01.500000", "finished_at": "2026-11-18T19:31:35", "targets": 3038, "ok": 3038,
+         "failed": 0, "retried": 2, "bars_written": 13556, "new_instruments": 9, "new_bars": 10558,
+         "failed_symbols": [], "breadth_rows": 2240, "errors": [],
+         "watchlists": [{"watchlist_id": "nse_traded", "members": 3003, "added": 9, "removed": 13},
+                        {"watchlist_id": "nifty50", "members": 50, "added": 0, "removed": 0}],
+         "data_quality": {"mode": "full", "instruments_rechecked": 3038, "open": 18249, "checks": {
+             "gap": {"found": 15712, "new": 15712, "resolved": 0},
+             "bad_bar": {"found": 2213, "new": 2213, "resolved": 0},
+             "jump": {"found": 302, "new": 302, "resolved": 1},
+             "stale": {"found": 0, "new": 0, "resolved": 0},
+             "short_history": {"found": 457, "new": 457, "resolved": 0}}}}
+    return {**r, **overrides}
+
+
+def test_summary_block_normal_night():
+    from markets.cli import summary_block
+
+    assert summary_block(_report(), scheduled=True) == (
+        "2026-11-18  18:00-19:31 (1h31m)  scheduled\n"
+        "  stocks:   3,038/3,038 ok, 0 failed (2 retried)\n"
+        "  bars:     13,556 (existing stocks 2,998; 9 new stocks backfilled 10,558)\n"
+        "  breadth:  2,240 rows\n"
+        "  lists:    nse_traded +9 -13; others unchanged\n"
+        "  quality:  18,249 open; +18,684 new, -1 resolved (full): gap +15,712, bad_bar +2,213, jump +302 -1\n"
+        "  failed:   -\n\n")
+
+
+def test_summary_block_failures_holiday_and_missing_dq():
+    from datetime import datetime
+
+    from markets.cli import summary_block
+
+    failed = [f"S{i}-EQ" for i in range(7)]
+    text = summary_block(_report(
+        started_at=datetime(2026, 11, 20, 17, 0), finished_at=datetime(2026, 11, 20, 17, 12),  # direct-run datetimes
+        ok=3031, failed=7, bars_written=0, new_instruments=0, new_bars=0, failed_symbols=failed,
+        errors=[f"instrument {i}: rate" for i in range(7)] + ["sector breadth: boom"],
+        watchlists=[{"watchlist_id": "nifty50", "members": 50, "added": 0, "removed": 0}], data_quality=None,
+    ), scheduled=False)
+    assert text.endswith("\n\n") and text.rstrip("\n").splitlines() == [
+        "2026-11-20  17:00-17:12 (12m)  manual",
+        "  stocks:   3,031/3,038 ok, 7 failed (2 retried)",
+        "  bars:     0 (no new bars: market holiday?)",
+        "  breadth:  2,240 rows",
+        "  lists:    no changes",
+        "  quality:  not run",
+        "  failed:   S0-EQ, S1-EQ, S2-EQ, S3-EQ, S4-EQ +2 more",
+        "  errors:   1 other (see update-2026-11-20.log)",
+    ]
+
+
+def test_summary_block_existing_stocks_only():
+    from markets.cli import summary_block
+
+    text = summary_block(_report(bars_written=3001, new_instruments=0, new_bars=0, watchlists=[]), scheduled=True)
+    assert "  bars:     3,001\n" in text and "  lists:    no changes\n" in text
+
+
+def test_append_summary_adds_blocks(tmp_path, monkeypatch):
+    import markets.config
+    from markets.cli import _append_summary
+
+    monkeypatch.setattr(markets.config, "BACKEND_DIR", tmp_path)
+    _append_summary(_report(), scheduled=True)
+    _append_summary(_report(), scheduled=False)
+    text = (tmp_path / "logs" / "nightly-summary.log").read_text(encoding="utf-8")
+    assert text.count("2026-11-18  18:00-19:31") == 2  # appended, not overwritten
+    assert text.index("scheduled\n") < text.index("manual\n")
+
+
+def test_summary_block_from_older_server_without_new_fields():
+    from markets.cli import summary_block
+
+    old = {k: v for k, v in _report(failed=2, ok=3036).items()
+           if k not in ("new_instruments", "new_bars", "failed_symbols")}
+    old["errors"] = ["instrument 1: rate", "instrument 2: rate"]
+    text = summary_block(old, scheduled=True)
+    assert "  bars:     13,556\n" in text
+    assert "  failed:   2 (see update-2026-11-18.log)\n" in text and "errors:" not in text

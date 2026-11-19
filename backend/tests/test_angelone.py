@@ -37,17 +37,32 @@ def _provider(monkeypatch, fail, retries=4):
     return p, slept
 
 
-def test_rate_limit_backoff_grows(monkeypatch):
+def test_rate_limit_waits_for_the_minute_to_reset(monkeypatch):
     p, slept = _provider(monkeypatch, fail=3)
     assert len(p._call_candles({"symboltoken": "1"})) == 1
-    assert slept == [15.0, 30.0, 60.0]
+    assert slept == [60.0, 60.0, 60.0]
 
 
 def test_rate_limit_gives_up_without_a_final_sleep(monkeypatch):
     p, slept = _provider(monkeypatch, fail=9, retries=3)
     with pytest.raises(ProviderError, match="exceeding access rate"):
         p._call_candles({"symboltoken": "1"})
-    assert p._api.calls == 3 and slept == [15.0, 30.0]
+    assert p._api.calls == 3 and slept == [60.0, 60.0]
+
+
+def test_candle_calls_are_evenly_spaced_under_40_a_minute():
+    from markets.providers.angelone import CANDLE_RATE_LIMITS
+    from markets.providers.ratelimit import RateLimiter
+
+    now = [0.0]
+    limiter = RateLimiter(CANDLE_RATE_LIMITS, clock=lambda: now[0], sleep=lambda s: now.__setitem__(0, now[0] + s))
+    times = []
+    for _ in range(200):
+        limiter.acquire()
+        times.append(now[0])
+    gaps = [b - a for a, b in zip(times, times[1:])]
+    assert 1.55 <= min(gaps) and max(gaps) < 1.6  # even spacing (plus the limiter's 0.01 s margin), no bursts
+    assert max(sum(1 for t in times if s <= t < s + 60.0) for s in times) <= 39  # Angel rejects the 41st in a minute
 
 
 def test_sdk_error_logs_mask_secrets(tmp_path):

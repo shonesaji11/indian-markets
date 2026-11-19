@@ -41,7 +41,7 @@ Only for live (unexpired) F&O contracts. `data` = list of `{time: "2024-08-19T12
 
 ## Confirmed behaviour (live use)
 
-- Bursts spaced 0.4 s apart were rejected with a **non-JSON** body: `Access denied because of exceeding access rate`. The SDK then raises `DataException("Couldn't parse the JSON response ...")`. Pace at >= 0.5 s and stay under 80/min; retry with backoff.
+- Bursts spaced 0.4 s apart were rejected with a **non-JSON** body: `Access denied because of exceeding access rate`. The SDK then raises `DataException("Couldn't parse the JSON response ...")`. In practice only 40 calls a minute get through (measured 19 Nov 2026; see rate-limits.md): pace at >= 1.55 s and wait 60 s after a rejection.
 - Daily history is **adjusted** for splits and bonuses.
 - Index volume is always 0.
 - Nifty 50 (99926000) has a gap in Angel's own data from 28 Aug 2017 to 12 Sep 2017. Not a client bug.

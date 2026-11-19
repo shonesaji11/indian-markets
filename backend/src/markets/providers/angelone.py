@@ -58,8 +58,10 @@ _INTERVALS = {
 
 _INSTRUMENT_TYPES = {"": "EQ", "AMXIDX": "INDEX"}
 
-# Slightly under the documented 2/s, 80/min, 5000/hr so clock skew never trips them.
-CANDLE_RATE_LIMITS = ((2, 1.05), (78, 60.0), (4900, 3600.0))
+# The docs say 2/s, 80/min, 5000/hr, but Angel rejects the 41st candle call in any minute (measured
+# 19 Nov 2026, evenly spaced and in bursts). One call every 1.55 s (~38.7/min) stays under it with no
+# rejections; the 39/min and hourly windows are backstops.
+CANDLE_RATE_LIMITS = ((1, 1.55), (39, 60.0), (4900, 3600.0))
 # Quote docs disagree (1/s in the text, 10/s in the table); stay at the stricter one. ~60 calls a night.
 QUOTE_RATE_LIMITS = ((1, 1.05), (450, 60.0), (4500, 3600.0))
 QUOTE_BATCH = 50
@@ -134,9 +136,9 @@ class AngelOneProvider:
                 last_error = str(exc)
                 log.warning("%s failed (attempt %d): %s", what, attempt + 1, exc)
                 if attempt + 1 < self._max_retries:
-                    # Rate-limit rejections need the per-minute window to drain: 15s, 30s, 60s.
+                    # A rate-limit rejection only clears when Angel's minute resets; shorter waits just fail again.
                     rate_limited = "exceeding access rate" in last_error
-                    time.sleep(min(15.0 * 2 ** attempt, 60.0) if rate_limited else 1.5 * (attempt + 1))
+                    time.sleep(60.0 if rate_limited else 1.5 * (attempt + 1))
                 continue
             if resp and resp.get("status"):
                 return resp.get("data")

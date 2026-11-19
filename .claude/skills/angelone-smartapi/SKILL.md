@@ -49,7 +49,7 @@ Source: https://smartapi.angelone.in/docs/ (JS-rendered; WebFetch returns an emp
 
 ## Confirmed gotchas
 
-- **getCandleData: 2/s, 80/min, 5000/hr per client code.** At 0.4 s spacing, requests were rejected with the non-JSON body `Access denied because of exceeding access rate` (the SDK raises `DataException`). Pace at >= 0.5 s and back off.
+- **getCandleData: 2/s, 80/min, 5000/hr per client code.** At 0.4 s spacing, requests were rejected with the non-JSON body `Access denied because of exceeding access rate` (the SDK raises `DataException`). Measured on 19 Nov 2026, only 40 calls a minute actually get through: pace at >= 1.55 s and wait 60 s after a rejection.
 - **Max days per candle request:** 1m 30, 3m 60, 5m/10m 100, 15m/30m 200, 1h 400, 1d 2000. Dates are `"yyyy-MM-dd hh:mm"`; timestamps come back with `+05:30`.
 - Daily history is **split/bonus adjusted**. Index volume is **0**. Nifty 50 has a gap in Angel's own data from **28 Aug to 12 Sep 2017**.
 - **Quote `close` = previous day's close** (the same holds for WebSocket close). Quote takes up to **50 tokens** per request.

@@ -101,8 +101,8 @@ It runs on weekdays at 17:00 via Windows Task Scheduler (task "Markets nightly u
 registered by `backend/scripts/register-nightly-task.ps1`). Output goes to
 `backend/logs/update-YYYY-MM-DD.log` (kept 30 days), and each run appends a short summary
 (stocks ok/failed, bars, breadth rows, watchlist changes, data-quality counts, failed symbols)
-to `backend/logs/nightly-summary.log`, which is kept. About 1.5 hours for ~3,000 instruments,
-limited by Angel One's rate limits (see BOOK_OF_WORK); data-quality checks run as its last step,
+to `backend/logs/nightly-summary.log`, which is kept. About 80 minutes for ~3,000 instruments,
+limited by Angel One's 40 candle requests/minute; data-quality checks run as its last step,
 and the audit scheduled task reviews the result at 19:00.
 
 ```bash

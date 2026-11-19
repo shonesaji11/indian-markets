@@ -9,8 +9,8 @@ from typing import Callable, Sequence
 class RateLimiter:
     """Blocks until a call fits every (max_calls, per_seconds) window.
 
-    Angel One limits candle requests to 2/second AND 80/minute AND 5000/hour; a single
-    fixed gap cannot respect all three without being slow, a sliding window can.
+    Angel One limits requests per second, per minute and per hour at once; a single fixed
+    gap cannot respect all three without being slow, a sliding window can.
     """
 
     def __init__(self, limits: Sequence[tuple[int, float]], clock: Callable[[], float] = time.monotonic,

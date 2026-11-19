@@ -11,7 +11,7 @@ Project root: `C:\Users\shone\OneDrive\Documents\Coding\Python\Indian Markets`. 
 
 ## 1. Did the nightly update finish?
 
-The update runs at 17:00 on weekdays (`backend\scripts\nightly-update.ps1`, about 1.5 hours for ~3,000 stocks) and logs to `backend\logs\update-YYYY-MM-DD.log` (one file per day; each run starts with `==== <time> nightly update starting`).
+The update runs at 17:00 on weekdays (`backend\scripts\nightly-update.ps1`, about 80 minutes for ~3,000 stocks) and logs to `backend\logs\update-YYYY-MM-DD.log` (one file per day; each run starts with `==== <time> nightly update starting`).
 
 - Open the log for the latest weekday run: today's date when you run in the evening as scheduled (if run on a weekend or before 17:00, the previous weekday's).
 - It must end with `==== <time> finished with exit code N`. If the starting line has no matching finished line, the update is still running or died: report that, with the last lines of the log, and stop. If the log file is missing, say the update didn't run.

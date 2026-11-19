@@ -23,7 +23,7 @@ Python >= 3.9, package `markets` (`backend/pyproject.toml`; extras `angelone`, `
 | File | Symbols |
 |---|---|
 | `providers/__init__.py` | `ProviderError`, `build_provider(settings)` → Angel One or Fake |
-| `providers/angelone.py` | `AngelOneProvider` (login via TOTP, `list_instruments` from `SCRIP_MASTER_URL`, `fetch_candles` chunked per `_INTERVALS` max-days, rate-limited by `CANDLE_RATE_LIMITS`, re-login on `_TOKEN_ERRORS`; `last_trade_dates` via `getMarketData` FULL in batches of `QUOTE_BATCH`=50 under `QUOTE_RATE_LIMITS`; every call goes through `_call` (rate limit + retries, 15/30/60s backoff on rate-limit errors); `_INSTRUMENT_TYPES` maps `""`→EQ, `AMXIDX`→INDEX) |
+| `providers/angelone.py` | `AngelOneProvider` (login via TOTP, `list_instruments` from `SCRIP_MASTER_URL`, `fetch_candles` chunked per `_INTERVALS` max-days, rate-limited by `CANDLE_RATE_LIMITS` (one call per 1.55 s: Angel really allows 40/min), re-login on `_TOKEN_ERRORS`; `last_trade_dates` via `getMarketData` FULL in batches of `QUOTE_BATCH`=50 under `QUOTE_RATE_LIMITS`; every call goes through `_call` (rate limit + retries, a 60 s wait after a rate-limit rejection); `_INSTRUMENT_TYPES` maps `""`→EQ, `AMXIDX`→INDEX) |
 | `providers/fake.py` | `FakeProvider`: deterministic synthetic universe + candles for tests/offline |
 | `providers/ratelimit.py` | `RateLimiter(limits=[(max_calls, per_seconds), ...])`, sliding windows; `.acquire()` blocks until every window allows a call |
 | `sources/nse_indices.py` | `NseIndexSource.constituents(index)` downloads niftyindices.com CSVs → `NseConstituent` (`_FILE_NAMES` for slugs whose file isn't `ind_<slug>list.csv`) |

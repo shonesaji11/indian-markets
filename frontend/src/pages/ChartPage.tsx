@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useCalcSeriesList, useCandles, useLiveQuotes, useRefreshCandles } from '@/api/queries';
+import { useAlerts, useCalcSeriesList, useCandles, useLiveQuotes, useRefreshCandles } from '@/api/queries';
 import { INTERVALS, type Candle, type Interval } from '@/api/types';
 import {
   PriceChart,
@@ -36,6 +36,8 @@ import { InstrumentPicker } from '@/features/instruments/InstrumentPicker';
 import { liveState, useLiveBar } from '@/features/live/live';
 import { LiveBadge } from '@/features/live/LiveBadge';
 import { WatchlistStar } from '@/features/watchlists/WatchlistStar';
+import { AlertButton } from '@/features/alerts/AlertButton';
+import { activeByInstrument, alertLabel } from '@/features/alerts/alerts';
 import { useThemeVersion } from '@/hooks/useTheme';
 import { useUrlState } from '@/hooks/useUrlState';
 import { cssVar, fmt } from '@/lib/format';
@@ -133,6 +135,16 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
       volume: interval === '1d' ? { time, value: liveBar.volume, color } : undefined, // intraday: no volume per bar
     };
   }, [liveBar, interval, themeVersion]);
+  // This stock's active price alerts, drawn as dashed lines.
+  const alerts = useAlerts();
+  const alertLines = useMemo(
+    () =>
+      (activeByInstrument(alerts.data?.alerts).get(instrumentId ?? -1) ?? []).map((a) => ({
+        price: a.price,
+        title: `Alert ${alertLabel(a).toLowerCase()}`,
+      })),
+    [alerts.data, instrumentId],
+  );
 
   const { ohlc, volume } = useMemo(() => {
     const rows = candles.data?.candles ?? [];
@@ -253,6 +265,11 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
             instrument && (
               <>
                 <WatchlistStar instrumentId={instrument.instrument_id} />
+                <AlertButton
+                  instrumentId={instrument.instrument_id}
+                  symbol={instrument.symbol}
+                  now={liveBar?.close ?? last?.close}
+                />
                 {ohlc.length > 0 && (
                   <>
                     <Button
@@ -311,6 +328,7 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
                 ranges={ranges}
                 rangeTool={rangeTool}
                 live={liveChart}
+                priceLines={alertLines}
                 onRangeAdd={(r) => {
                   setRanges((rs) => [...rs, r]);
                   setRangeTool(null);

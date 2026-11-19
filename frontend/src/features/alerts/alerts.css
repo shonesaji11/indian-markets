@@ -1,0 +1,132 @@
+/* Bell: amber while the stock has an active alert. */
+.alert-bell--on {
+  color: var(--warn);
+}
+
+/* Add-alert dropdown */
+.alert-pop {
+  width: 250px;
+  padding: var(--space-2) 0;
+}
+.alert-pop__title {
+  padding: 0 var(--space-3) var(--space-2);
+  font-weight: 600;
+}
+.alert-pop__subtitle {
+  margin-bottom: var(--space-1);
+  font-size: var(--text-xs);
+}
+.alert-pop__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 26px;
+}
+.alert-pop__remove {
+  padding: 0 var(--space-1);
+  font: inherit;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.alert-pop__remove:hover {
+  color: var(--down);
+}
+
+.alert-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+}
+.alert-form__price {
+  width: 130px;
+}
+.alert-form__price[aria-invalid='true'] {
+  border-color: var(--down);
+}
+.alert-form__hint,
+.alert-form__warn,
+.alert-form__error {
+  margin-top: -4px;
+  font-size: var(--text-xs);
+}
+.alert-form__warn {
+  color: var(--warn);
+}
+.alert-form__error {
+  color: var(--down);
+}
+.alert-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+/* In-app notices, bottom right on every page (top right would cover page controls until closed) */
+.alert-notices {
+  position: fixed;
+  bottom: var(--space-4);
+  right: var(--space-4);
+  z-index: 50;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-2);
+  width: min(300px, calc(100vw - 2 * var(--space-4)));
+}
+.alert-notice {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--warn);
+  box-shadow: var(--shadow);
+  font-size: var(--text-sm);
+}
+.alert-notice__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--warn);
+}
+.alert-notice__head strong {
+  flex: 1;
+  color: var(--text);
+  font-weight: 600;
+}
+.alert-notice__close,
+.alert-notice__open {
+  padding: 0;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.alert-notice__close {
+  color: var(--text-muted);
+}
+.alert-notice__open {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+  color: var(--accent);
+}
+
+/* Alerts page */
+.alerts-page__actions {
+  display: inline-flex;
+  gap: 2px;
+}
+.alerts-page__confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.alerts-page__sent {
+  color: var(--up);
+}
+.alerts-page__failed {
+  color: var(--down);
+}

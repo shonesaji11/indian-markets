@@ -78,6 +78,15 @@ class LiveFeed(Protocol):
         ...
 
 
+class Notifier(Protocol):
+    """Sends a short text message to the user (alerts)."""
+
+    def send(self, text: str) -> None:
+        """Deliver `text`, retrying as the channel needs; raises (ideally NotifyError) if it never goes.
+        Error messages must not contain credentials."""
+        ...
+
+
 class Constituent(Protocol):
     symbol: str
     series: str

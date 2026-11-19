@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     angel_pin: Optional[str] = None
     angel_totp_secret: Optional[str] = None
 
+    # Alerts by Telegram (notifiers/telegram.py has the setup steps); without both, alerts show in the app only.
+    telegram_bot_token: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+
     cors_origins: list[str] = ["http://localhost:5173"]
 
 

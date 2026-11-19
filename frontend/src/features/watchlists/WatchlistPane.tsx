@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  useAlerts,
   useCreateWatchlist,
   useDeleteWatchlist,
   useLiveQuotes,
@@ -11,6 +12,8 @@ import type { LiveQuote, WatchlistQuote } from '@/api/types';
 import { Button, ErrorMessage, Popover, Skeleton } from '@/components/ui';
 import type { ChartList } from '@/features/charts/chartList';
 import { RelatedList, type SidePaneProps } from '@/features/charts/RelatedList';
+import { AlertButton } from '@/features/alerts/AlertButton';
+import { activeByInstrument } from '@/features/alerts/alerts';
 import { liveFigures, liveState, quoteMap } from '@/features/live/live';
 import { useUrlUpdate } from '@/hooks/useUrlState';
 import { fmt } from '@/lib/format';
@@ -66,10 +69,15 @@ export function WatchlistPane({ current, onSelect, open, onOpenChange }: SidePan
     liveState(live.data?.status, (quotes.data ?? []).some((q) => liveFigures(q.ts, liveQuotes.get(q.instrument_id))))
       ?.kind === 'live';
 
-  const list = useMemo(
-    () => (active && quotes.data ? toChartList(active.name, quotes.data, liveQuotes, liveOn) : null),
-    [active?.name, quotes.data, liveQuotes, liveOn],
-  );
+  const alerts = useAlerts();
+  const alerting = useMemo(() => activeByInstrument(alerts.data?.alerts), [alerts.data]);
+
+  const list = useMemo(() => {
+    if (!active || !quotes.data) return null;
+    const chartList = toChartList(active.name, quotes.data, liveQuotes, liveOn);
+    // The amber dot: at least one alert on the stock hasn't fired yet.
+    return { ...chartList, items: chartList.items.map((i) => (alerting.has(i.instrument_id) ? { ...i, marked: true } : i)) };
+  }, [active?.name, quotes.data, liveQuotes, liveOn, alerting]);
 
   // Nothing charted yet (first visit, or just switched lists): chart the list's first stock.
   useEffect(() => {
@@ -243,6 +251,7 @@ export function WatchlistPane({ current, onSelect, open, onOpenChange }: SidePan
         </>
       }
       onRemove={(instrumentId) => setMember.mutate({ id: active.watchlist_id, instrumentId, member: false })}
+      rowAction={(item) => <AlertButton instrumentId={item.instrument_id} symbol={item.symbol} now={item.close} inList />}
       empty={<div className="muted watchlist-pane__empty">Empty. Use the ☆ on any chart to add stocks.</div>}
     />
   );

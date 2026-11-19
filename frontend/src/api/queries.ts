@@ -41,6 +41,7 @@ import type {
 export const keys = {
   instruments: (q: string, exchange?: string) => ['instruments', q, exchange] as const,
   candles: (id: number, interval: Interval, start?: string) => ['candles', id, interval, start] as const,
+  candlesRefresh: (id: number, interval: Interval) => ['candles-refresh', id, interval] as const,
   indicators: ['indicators'] as const,
   calcDefinitions: ['calc-definitions'] as const,
   calc: (id: number, interval: Interval, name: string, params: Record<string, ParamValue>) =>
@@ -89,6 +90,33 @@ export function useCandles(instrumentId: number | undefined, interval: Interval,
     queryKey: keys.candles(instrumentId ?? -1, interval, start),
     queryFn: () => http.get<CandleSeries>(`/candles/${instrumentId}`, { interval, start }),
     enabled: instrumentId !== undefined,
+  });
+}
+
+/**
+ * Downloads what a chart is missing (from its last stored bar up to now) once per visit, then reloads its
+ * candles and indicators. Leaving the chart forgets the visit, so coming back downloads again. Failures
+ * aren't retried by themselves (`refetch` = Retry), so they can't use up the download allowance.
+ */
+export function useRefreshCandles(instrumentId: number | undefined, interval: Interval, enabled: boolean) {
+  const client = useQueryClient();
+  return useQuery({
+    queryKey: keys.candlesRefresh(instrumentId ?? -1, interval),
+    queryFn: async () => {
+      const res = await http.post<{ rows: number }>(`/candles/${instrumentId}/refresh?interval=${interval}`);
+      if (res.rows > 0) {
+        await Promise.all([
+          client.invalidateQueries({ queryKey: ['candles', instrumentId, interval] }),
+          client.invalidateQueries({ queryKey: ['calc', instrumentId, interval] }),
+        ]);
+      }
+      return res;
+    },
+    enabled: enabled && instrumentId !== undefined,
+    staleTime: Infinity,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 

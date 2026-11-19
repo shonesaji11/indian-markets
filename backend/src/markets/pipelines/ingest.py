@@ -9,12 +9,18 @@ from markets.core.ports import CandleRepository, IngestionLog, InstrumentReposit
 
 log = logging.getLogger(__name__)
 
-# How far back the first fetch for an instrument goes when no start date is given.
+# How far back the first fetch for an instrument goes when no start date is given. Intraday: one Angel One
+# request's worth (its max days per getCandleData call), so a chart's first visit takes ~2 seconds.
 DEFAULT_HISTORY = {
     Interval.D1: timedelta(days=365 * 10),
-    Interval.H1: timedelta(days=365 * 2),
+    Interval.H1: timedelta(days=400),
+    Interval.M30: timedelta(days=200),
+    Interval.M15: timedelta(days=200),
+    Interval.M10: timedelta(days=100),
+    Interval.M5: timedelta(days=100),
+    Interval.M3: timedelta(days=60),
+    Interval.M1: timedelta(days=30),
 }
-DEFAULT_INTRADAY_HISTORY = timedelta(days=60)
 
 
 class IngestionService:
@@ -53,7 +59,7 @@ class IngestionService:
         end = end or datetime.now()
         if start is None:
             latest = self.candles.latest_ts(instrument_id, interval)
-            start = latest or end - DEFAULT_HISTORY.get(interval, DEFAULT_INTRADAY_HISTORY)
+            start = latest or end - DEFAULT_HISTORY[interval]
         window = DateRange(start, end)
 
         run_id = self.runs.start(self.provider.name, instrument_id, interval, window)

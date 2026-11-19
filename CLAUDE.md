@@ -1,6 +1,6 @@
 # Working rules
 
-All rules, preferences and project knowledge live in the project: this file, `BOOK_OF_WORK.md`, and the skills under `.claude/skills/`. Never save them to Claude's personal memory; when I give a lasting instruction, add it here.
+All rules, preferences and project knowledge live in the project: this file, `BOOK_OF_WORK.md` (local only, see below), and the skills under `.claude/skills/`. Never save them to Claude's personal memory; when I give a lasting instruction, add it here.
 
 ## Be objective (very important)
 - Never agree with me to flatter me or just to sound agreeable. Judge every idea, plan or approach on its merits.
@@ -19,7 +19,8 @@ All rules, preferences and project knowledge live in the project: this file, `BO
 - When requirements are ambiguous, ask me instead of guessing. Trivial fixes (typos, one-line bugs) don't need a plan; just do them.
 - Ideas I mention in passing ("for the future", "maybe"): answer the direct question, add a short dated entry under Ideas in `BOOK_OF_WORK.md`, say in one line that it's logged, and move on. No investigation, plan or mockup unless I ask to build it.
 - Book of work: anything left unresolved (an ambiguity we park, a known limitation, a bug outside the task, an idea for later) goes into `BOOK_OF_WORK.md` in the right section, dated, with the options considered and the current behaviour. Check it before working in an area, and delete items once they're resolved.
-- The book of work holds only things still to do or decide. Before every commit, re-read the items in the areas the work touched: delete any it resolved (git history keeps the record), and cut partly resolved ones down to what's left. Never leave an entry that only describes finished work.
+- The book of work holds only things still to do or decide. Before every commit, re-read the items in the areas the work touched: delete any it resolved (the work's commit and PR are the record), and cut partly resolved ones down to what's left. Never leave an entry that only describes finished work.
+- `BOOK_OF_WORK.md` is local only: gitignored and never committed, kept in the main folder (backed up by OneDrive). Read and edit it there in place, also when the work itself is in a worktree; it is the one file in the main folder you may edit. It holds only items I want to work on or decide: the nightly audit proposes entries in its report but never writes them.
 
 ## Code style
 - Keep code simple and concise. Prefer the smallest change that solves the problem over a larger refactor, as long as speed doesn't suffer.
@@ -65,7 +66,7 @@ All rules, preferences and project knowledge live in the project: this file, `BO
 - If anything turns up, unstage it, move the value to a gitignored file, and tell me before committing.
 
 ## Branches and pull requests (several chats work here at once)
-- The main folder stays on `main` and is never edited: no file changes, commits, branch switches or stashes there. It runs the app and only fast-forwards (`git pull --ff-only`) after a merge. A `git checkout` there would change the branch under every other chat.
+- The main folder stays on `main` and is never edited: no file changes (except the untracked `BOOK_OF_WORK.md`), commits, branch switches or stashes there. It runs the app and only fast-forwards (`git pull --ff-only`) after a merge. A `git checkout` there would change the branch under every other chat.
 - Every change (code or docs, however small) starts in its own worktree on a new branch from the latest `origin/main`, outside OneDrive (so `node_modules` and DB files aren't synced): `git fetch origin`, then `git worktree add C:\Users\shone\worktrees\markets-<name> -b feat/<name> origin/main`. The frontend needs its own `npm install` and the backend a copy of `backend/.env`; run backend tests with the main folder's `.venv` python and `PYTHONPATH=src` so the worktree's code is the one tested. Subagents that edit files work in that same worktree, never in the main folder.
 - When the work is done and checked ("Before calling work done"): commit on the branch, `git fetch origin` and rebase onto `origin/main` (re-run the tests if `main` moved), push the branch, open a PR with `gh pr create` (body = the commit message), give me the link, and stop.
 - If the rebase conflicts with another chat's merged work, resolve it only when it is clearly mechanical, re-run the tests, and say so; otherwise stop and tell me.

@@ -25,5 +25,8 @@ logs/
 # Personal Claude Code settings (shared skills and CLAUDE.md are committed)
 .claude/settings.local.json
 
+# Book of work: the user's local list of what to work on, kept only in the main folder
+BOOK_OF_WORK.md
+
 # Build caches
 *.tsbuildinfo

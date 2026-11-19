@@ -1,11 +1,11 @@
 ---
 name: audit
-description: Review the nightly market-data update and its data-quality (DQ) checks for this project, investigate new issues, record them in BOOK_OF_WORK.md and propose fixes for the user to approve. Use after the nightly update (it runs as a scheduled task at 19:00 Mon-Fri, after the 17:00 update) or whenever the user asks about data quality, missing/bad bars, gaps, stale stocks, split-like jumps or failed downloads. Read-only on data and code.
+description: Review the nightly market-data update and its data-quality (DQ) checks for this project, investigate new issues, write the findings to a nightly audit file and propose fixes and book-of-work entries for the user to approve. Use after the nightly update (it runs as a scheduled task at 19:00 Mon-Fri, after the 17:00 update) or whenever the user asks about data quality, missing/bad bars, gaps, stale stocks, split-like jumps or failed downloads. Read-only on data and code.
 ---
 
 # Audit: nightly data-quality review
 
-You are bound by `CLAUDE.md` in the project root (read it first). Above all: **you never change data or code**. You report, record and propose; the user approves every fix (often from their phone), and fixes then go through the normal plan → approval → build flow.
+You are bound by `CLAUDE.md` in the project root (read it first). Above all: **you never change data, code or any file except your own audit file** (step 4), and never `BOOK_OF_WORK.md`. You report, record in the audit file and propose; the user approves every fix (often from their phone), and fixes then go through the normal plan → approval → build flow.
 
 Project root: `C:\Users\shone\OneDrive\Documents\Coding\Python\Indian Markets`. Run commands from `backend\` with `.venv\Scripts\markets.exe`.
 
@@ -57,7 +57,9 @@ Thresholds and logic: `backend\src\markets\engine\data_quality.py`. Storage: `dq
 
 ## 4. Record
 
-Update `BOOK_OF_WORK.md` under **Bugs** (this is the only file you may edit): one dated entry per new group that needs action, with the check, affected stocks/dates, likely cause, options and your recommendation. Update existing entries instead of duplicating them, and remove entries whose issues are now resolved. Don't add entries for expected short history or for issues already accepted. Do not commit.
+Write the full findings to `backend\logs\audit-YYYY-MM-DD.md` (the date of the update you audited; overwrite it if you re-run that day). The folder is gitignored and the file is kept: it is the nightly record (update status, what the repair did, the groups found with numbers and causes). It is the only file you may write; never commit.
+
+Never edit `BOOK_OF_WORK.md`: it holds only items the user chooses to work on. When a group needs action and isn't already in it, draft an entry (dated, for **Bugs**, in the book's format: check, affected stocks/dates, likely cause, options and your recommendation) for the report's "Proposed for the book of work" section; the user decides whether it goes in. Also say there if an existing entry looks resolved or out of date. Don't propose entries for expected short history or for issues already accepted.
 
 ## 5. Report to the user
 
@@ -68,5 +70,6 @@ Keep it short and phone-readable:
 3. New groups needing attention, each with likely cause and the proposed fix (e.g. "re-download TCS 1–31 Mar: `markets ingest NSE:TCS-EQ --start 2024-03-01 --end 2024-03-31`"). Any fix that changes bars, mappings or watchlists also lists the rebuilds it needs from `markets-codebase/references/derived-data.md` (e.g. "then `markets breadth --backfill`, since the bars are older than 10 days").
 4. Issues that look fine to accept, each with the exact command for the user to run or approve: `markets dq accept <issue_id> --note "<why>"`.
 5. Anything that needs the user's decision.
+6. Proposed for the book of work: each drafted entry, and any existing entry that looks resolved (leave this out when there is none).
 
-If there is nothing new: one line saying the update finished cleanly and no new DQ issues.
+End with the path of tonight's audit file. If there is nothing new: one line saying the update finished cleanly and no new DQ issues, plus the audit file's path.

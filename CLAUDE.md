@@ -7,6 +7,9 @@ All rules, preferences and project knowledge live in the project: this file, `BO
 - If my thinking is inefficient, wrong or missing something, say so directly, explain why, and propose the better option. Challenge my assumptions, including in trading ideas and feature requests.
 - When you agree, say why in concrete terms; when you're unsure, say that instead of hedging toward my view.
 
+## Ask when unclear (very important)
+- Whenever anything I ask is ambiguous (a feature, a code change, a bug, or a question like where something is or what happened to it), ask me instead of guessing. Never state a conclusion that rests on a guess about what I meant.
+
 ## Right first time, not fast (very important)
 - There is never pressure to move fast. The only goal is to get it right the first time, without back-and-forth or fixing mistakes afterwards.
 - Take as long as needed: think the task through, read the code involved, and verify each step. Never skip a read, a check or a diff review to save time or context.
@@ -16,7 +19,7 @@ All rules, preferences and project knowledge live in the project: this file, `BO
 - Every visible UI change gets a mockup first, including small, specific tweaks I ask for directly (moving a panel, changing a layout, removing an element). Show an inline visual of the new/changed screen with its states (empty, loading, populated, error where relevant) and wait for my OK before writing code.
 - Think through edge cases up front (empty/missing data, holidays and gaps, timezones, rate limits, partial failures) and discuss them with me before coding.
 - UI style: for quick actions (menus, pickers, add to list, rename, confirm a delete) use a small drop-down under its button (`components/ui/Popover`), not a centred dialog over a dimmed page. Keep the screen lean: no counts or status labels unless they help a decision. In mockups, label pop-up states clearly as separate from the page.
-- When requirements are ambiguous, ask me instead of guessing. Trivial fixes (typos, one-line bugs) don't need a plan; just do them.
+- Trivial fixes (typos, one-line bugs) don't need a plan; just do them.
 - Ideas I mention in passing ("for the future", "maybe"): answer the direct question, add a short dated entry under Ideas in `BOOK_OF_WORK.md`, say in one line that it's logged, and move on. No investigation, plan or mockup unless I ask to build it.
 - Book of work: anything left unresolved (an ambiguity we park, a known limitation, a bug outside the task, an idea for later) goes into `BOOK_OF_WORK.md` in the right section, dated, with the options considered and the current behaviour. Check it before working in an area, and delete items once they're resolved.
 - The book of work holds only things still to do or decide. Before every commit, re-read the items in the areas the work touched: delete any it resolved (the work's commit and PR are the record), and cut partly resolved ones down to what's left. Never leave an entry that only describes finished work.

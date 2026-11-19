@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date, datetime, timedelta
-from typing import Iterator, Sequence
+from typing import Callable, Iterator, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 
-from markets.core.models import CANDLE_COLUMNS, DateRange, Instrument, Interval, ProviderInstrument
+from markets.core.models import CANDLE_COLUMNS, DateRange, Instrument, Interval, LiveTick, ProviderInstrument
+from markets.providers import ProviderError
 
 _UNIVERSE = [
     ("NSE", "RELIANCE-EQ", "RELIANCE", "EQ", 2500.0),
@@ -64,6 +65,37 @@ class FakeProvider:
         if interval == Interval.D1:
             start = start.normalize()
         return df[(df.index >= start) & (df.index <= pd.Timestamp(window.end))]
+
+
+class FakeLiveFeed:
+    """LiveFeed for tests and offline runs: nothing streams until a test calls `emit` (or `drop`)."""
+
+    max_subscriptions = 1000
+
+    def __init__(self) -> None:
+        self.connected = False
+        self.fail_connect = False
+        self.subscribed: list[tuple[str, str]] = []
+        self._on_tick: Optional[Callable[[LiveTick], None]] = None
+        self._on_close: Optional[Callable[[], None]] = None
+
+    def connect(self, on_tick: Callable[[LiveTick], None], on_close: Callable[[], None]) -> None:
+        if self.fail_connect:
+            raise ProviderError("fake stream refused")
+        self._on_tick, self._on_close, self.connected, self.subscribed = on_tick, on_close, True, []
+
+    def subscribe(self, refs: Sequence[tuple[str, str]]) -> None:
+        self.subscribed.extend(refs)
+
+    def close(self) -> None:
+        self.connected = False
+
+    def emit(self, tick: LiveTick) -> None:
+        self._on_tick(tick)
+
+    def drop(self) -> None:
+        self.connected = False
+        self._on_close()
 
 
 def _bar_index(interval: Interval, start: datetime, end: datetime) -> pd.DatetimeIndex:

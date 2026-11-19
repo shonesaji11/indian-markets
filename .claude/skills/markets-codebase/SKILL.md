@@ -43,6 +43,7 @@ Launcher: repo-root `start-dashboard.bat` starts backend, Vite and an ngrok tunn
 | New list that opens charts | Call `useOpenChart()(instrumentId, {title, context, items: toListItems(shownRows)})` from `features/charts/chartList.ts`; never `navigate('/chart?…')` directly. |
 | New data-quality check | Pure `find_*` function in `engine/data_quality.py` + wire it into `DataQualityService` (`BAR_CHECKS` if it looks at bars, `GLOBAL_CHECKS` otherwise), bump `DQ_VERSION`, describe it in `.claude/skills/audit/SKILL.md`. The nightly audit (scheduled task, `audit` skill) reads `markets dq report` |
 | New UI widget | Generic → `components/ui/` and export from `index.ts`; feature-specific → `features/<area>/`. Check the existing list in references/frontend.md first. |
+| Live prices somewhere new | Frontend: `useLiveQuotes(ids)` + `features/live/live.ts` (`liveFigures` decides when a quote beats the stored bar, `liveState` + `LiveBadge` for the badge, `FlashValue` for the number). Backend: read `LiveService.quotes`/`status`; to stream ids all day (not only while a page asks), add them in `bootstrap.always_streamed`. Nothing live is written to the DB. |
 | New stored derived data | Anything that writes computed results (a table filled from other tables, a cache, an output file): add a section to `references/derived-data.md` (writer, inputs, guards, rebuild command, which input changes need which rebuild) in the same change. Prefer a version guard and a rebuild command over relying on someone remembering. |
 
 ## References

@@ -2,32 +2,42 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   useCreateWatchlist,
   useDeleteWatchlist,
+  useLiveQuotes,
   useRenameWatchlist,
   useSetWatchlistMember,
   useWatchlistQuotes,
 } from '@/api/queries';
-import type { WatchlistQuote } from '@/api/types';
+import type { LiveQuote, WatchlistQuote } from '@/api/types';
 import { Button, ErrorMessage, Popover, Skeleton } from '@/components/ui';
 import type { ChartList } from '@/features/charts/chartList';
 import { RelatedList, type SidePaneProps } from '@/features/charts/RelatedList';
+import { liveFigures, liveState, quoteMap } from '@/features/live/live';
 import { useUrlUpdate } from '@/hooks/useUrlState';
 import { fmt } from '@/lib/format';
 import { NameForm } from './NameForm';
 import { useActiveWatchlist } from './useActiveWatchlist';
 import './watchlists.css';
 
-/** Stocks in the list's order; a stock whose last bar is older than the list's newest shows that date. */
-function toChartList(name: string, quotes: WatchlistQuote[]): ChartList {
+/**
+ * Stocks in the list's order, live prices laid over the stored bars where newer. While the market is live, a
+ * stock without a live price shows "no trade today"; otherwise one whose last bar is older than the list's
+ * newest shows that date.
+ */
+function toChartList(name: string, quotes: WatchlistQuote[], live: Map<number, LiveQuote>, liveOn: boolean): ChartList {
   const newest = quotes.reduce<string | null>((m, q) => (q.ts && (!m || q.ts > m) ? q.ts : m), null);
   return {
     title: name,
-    items: quotes.map((q) => ({
-      instrument_id: q.instrument_id,
-      symbol: q.symbol,
-      change: q.pct_change,
-      close: q.close,
-      note: !q.ts ? 'no data' : q.ts < newest! ? fmt.shortDate(q.ts) : undefined,
-    })),
+    items: quotes.map((q) => {
+      const figures = liveFigures(q.ts, live.get(q.instrument_id));
+      if (figures) return { instrument_id: q.instrument_id, symbol: q.symbol, change: figures.pct_change, close: figures.close };
+      return {
+        instrument_id: q.instrument_id,
+        symbol: q.symbol,
+        change: q.pct_change,
+        close: q.close,
+        note: !q.ts ? 'no data' : liveOn ? 'no trade today' : q.ts < newest! ? fmt.shortDate(q.ts) : undefined,
+      };
+    }),
   };
 }
 
@@ -50,9 +60,15 @@ export function WatchlistPane({ current, onSelect, open, onOpenChange }: SidePan
   const [renaming, setRenaming] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
+  const live = useLiveQuotes((quotes.data ?? []).map((q) => q.instrument_id));
+  const liveQuotes = useMemo(() => quoteMap(live.data?.quotes), [live.data]);
+  const liveOn =
+    liveState(live.data?.status, (quotes.data ?? []).some((q) => liveFigures(q.ts, liveQuotes.get(q.instrument_id))))
+      ?.kind === 'live';
+
   const list = useMemo(
-    () => (active && quotes.data ? toChartList(active.name, quotes.data) : null),
-    [active?.name, quotes.data],
+    () => (active && quotes.data ? toChartList(active.name, quotes.data, liveQuotes, liveOn) : null),
+    [active?.name, quotes.data, liveQuotes, liveOn],
   );
 
   // Nothing charted yet (first visit, or just switched lists): chart the list's first stock.

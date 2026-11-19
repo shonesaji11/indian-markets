@@ -6,6 +6,7 @@ export { Card } from './Card';
 export { DataTable, sortCodec, sortRows, type Column, type SortState } from './DataTable';
 export { Badge, Chip, Delta, EmptyState, ErrorMessage, Skeleton } from './Feedback';
 export { Checkbox, Field, SegmentedControl, Select, TextInput, type SelectOption } from './Field';
+export { FlashValue } from './FlashValue';
 export { PageHeader } from './PageHeader';
 export { Popover } from './Popover';
 export { Sparkline, type SparkPoint } from './Sparkline';

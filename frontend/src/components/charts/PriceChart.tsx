@@ -65,6 +65,8 @@ interface PriceChartProps {
   /** While set, two clicks on the chart measure a range of this kind and pass it to `onRangeAdd`. */
   rangeTool?: RangeKind | null;
   onRangeAdd?: (range: MeasuredRange) => void;
+  /** The forming bar from live prices (same time as the last candle, or later), drawn in a lighter shade. */
+  live?: { bar: OhlcPoint; volume?: ValuePoint } | null;
 }
 
 /** Candlestick chart with optional volume and any number of extra line/histogram series. */
@@ -78,6 +80,7 @@ export function PriceChart({
   ranges = [],
   rangeTool = null,
   onRangeAdd,
+  live = null,
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -216,6 +219,32 @@ export function PriceChart({
   useEffect(() => {
     volumeRef.current?.setData(volume ?? []);
   }, [volume]);
+
+  // Live: the forming bar in a lighter shade. When a new slot starts, the bar it replaces is finished and is
+  // redrawn in normal colours (the chart can only update its last bar). New stored candles start afresh.
+  const finished = useRef<OhlcPoint[]>([]);
+  const forming = useRef<OhlcPoint | null>(null);
+  useEffect(() => {
+    finished.current = [];
+    forming.current = null;
+  }, [candles]);
+  useEffect(() => {
+    const candleSeries = candleRef.current;
+    if (!candleSeries || !live) return;
+    const prev = forming.current;
+    if (prev && prev.time !== live.bar.time) {
+      finished.current.push(prev);
+      candleSeries.setData([...candles, ...finished.current]);
+    }
+    forming.current = live.bar;
+    const color = `${cssVar(live.bar.close >= live.bar.open ? '--up' : '--down')}99`;
+    try {
+      candleSeries.update({ ...live.bar, color, wickColor: color });
+      if (live.volume) volumeRef.current?.update(live.volume);
+    } catch {
+      // older than the chart's last bar (shouldn't happen: nextLiveBar never goes back); skip this one
+    }
+  }, [live, candles, themeVersion]);
 
   // Extra series are recreated whenever the list changes; cheap at these sizes.
   useEffect(() => {

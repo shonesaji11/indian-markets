@@ -10,12 +10,14 @@ interface SparklineProps {
   color: string;
   height?: number;
   formatValue?: (v: number) => string;
+  /** The last point is a live, not yet stored value: dashed last segment ending in a dot. */
+  liveLast?: boolean;
 }
 
 const VIEW_W = 200;
 
 /** Tiny trend line with a soft area and a hover readout of the nearest point. */
-export function Sparkline({ points, color, height = 36, formatValue = (v) => v.toFixed(2) }: SparklineProps) {
+export function Sparkline({ points, color, height = 36, formatValue = (v) => v.toFixed(2), liveLast = false }: SparklineProps) {
   const gradientId = useId();
   const [hover, setHover] = useState<number | null>(null);
 
@@ -30,9 +32,12 @@ export function Sparkline({ points, color, height = 36, formatValue = (v) => v.t
       (i / (values.length - 1)) * VIEW_W,
       pad + (1 - (v - min) / span) * (height - pad * 2),
     ]);
-    const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
-    return { xy, line, area: `${line}L${VIEW_W},${height}L0,${height}Z` };
-  }, [points, height]);
+    const segs = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`);
+    const line = segs.join('');
+    const solid = liveLast && segs.length > 2 ? segs.slice(0, -1).join('') : line;
+    const tail = liveLast ? xy.slice(-2).map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`).join('') : null;
+    return { xy, solid, tail, area: `${line}L${VIEW_W},${height}L0,${height}Z` };
+  }, [points, height, liveLast]);
 
   if (!geom) return <div style={{ height }} />;
 
@@ -61,7 +66,20 @@ export function Sparkline({ points, color, height = 36, formatValue = (v) => v.t
           </linearGradient>
         </defs>
         <path d={geom.area} fill={`url(#${gradientId})`} />
-        <path d={geom.line} fill="none" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        <path d={geom.solid} fill="none" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+        {geom.tail && (
+          <>
+            <path d={geom.tail} fill="none" stroke={color} strokeWidth={1.5} strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+            {/* A zero-length round-capped stroke: stays a circle although the SVG stretches. */}
+            <path
+              d={`M${geom.xy[geom.xy.length - 1].join(',')}h0`}
+              stroke={color}
+              strokeWidth={5}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </>
+        )}
         {active && (
           <line x1={active[0]} x2={active[0]} y1={0} y2={height} stroke="var(--axis)" vectorEffect="non-scaling-stroke" />
         )}

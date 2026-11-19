@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from 'react';
-import { Button, Delta } from '@/components/ui';
+import { Button, Delta, FlashValue } from '@/components/ui';
 import { fmt } from '@/lib/format';
 import { shortSymbol, type ChartList } from './chartList';
 import './charts.css';
@@ -100,7 +100,11 @@ export function RelatedList({ list, current, onSelect, open, onOpenChange, toolb
                 {shortSymbol(item.symbol)}
                 {item.note && <span className="muted chart-list__note"> · {item.note}</span>}
               </span>
-              {item.close !== undefined && <span className="num chart-list__close">{fmt.price(item.close)}</span>}
+              {item.close !== undefined && (
+                <FlashValue value={item.close}>
+                  <span className="num chart-list__close">{fmt.price(item.close)}</span>
+                </FlashValue>
+              )}
               <Delta value={item.change} format={fmt.pctAbs} />
             </button>
             {onRemove && (

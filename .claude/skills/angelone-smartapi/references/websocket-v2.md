@@ -9,7 +9,7 @@ Auth headers: `Authorization` (jwtToken), `x-api-key`, `x-client-code`, `x-feed-
 | Limit | Value |
 |---|---|
 | Connections per client code | 3 |
-| Subscriptions per session | 1000 (token x mode counts separately) |
+| Subscriptions per connection | 1000 (token x mode counts separately). Measured 20 Nov 2026: per connection, not per account (two connections carried 1000 + 250); a request that would pass 1000 is rejected whole with E1002 |
 | Heartbeat | send text `ping` (docs: every 30 s; SDK pings every 10 s), server replies `pong` |
 | Depth-20 (mode 4, SDK only) | NSE_CM (exchangeType 1) only, max 50 tokens |
 
@@ -26,6 +26,8 @@ Subscribe request:
 | `mode` | 1 LTP, 2 Quote, 3 SnapQuote (4 Depth-20 in SDK) |
 | `exchangeType` | 1 nse_cm, 2 nse_fo, 3 bse_cm, 4 bse_fo, 5 mcx_fo, 7 ncx_fo, 13 cde_fo (7/13 from SDK) |
 | `correlationID` | optional, 10 chars, echoed in errors |
+
+Measured 20 Nov 2026: the jwt + feed token of a normal REST login work (`Authorization: Bearer <jwt>`), and a second login does not end the first session. Each subscribed token sends its latest quote at once, also after hours (stamped with its last trade time). After the closing session the LTP equals the official close (indices and stocks). The project's client is `providers/angelone_stream.py` (not the SDK class).
 
 Recommendation: one mode per token. Unsubscribing unknown tokens and duplicate subscriptions are ignored.
 

@@ -76,6 +76,7 @@ class AngelOneProvider:
         self._creds = (api_key, client_code, pin, totp_secret)
         self._max_retries = max_retries
         self._api = None
+        self._login_day: Optional[date] = None
         self._limiter = RateLimiter(CANDLE_RATE_LIMITS)
         self._quote_limiter = RateLimiter(QUOTE_RATE_LIMITS)
 
@@ -153,8 +154,15 @@ class AngelOneProvider:
 
     # ---- plumbing ----------------------------------------------------------------
 
+    def stream_auth(self) -> dict[str, str]:
+        """Headers for the market-data WebSocket, from the same login as the REST calls."""
+        api = self._session()
+        return {"Authorization": f"Bearer {api.access_token}", "x-api-key": self._creds[0],
+                "x-client-code": self._creds[1], "x-feed-token": api.feed_token}
+
     def _session(self):
-        if self._api is not None:
+        # Sessions end at midnight IST: log in again on a new day instead of failing the first call.
+        if self._api is not None and self._login_day == date.today():
             return self._api
         api_key, client_code, pin, totp_secret = self._creds
         if not all(self._creds):
@@ -169,7 +177,7 @@ class AngelOneProvider:
         resp = api.generateSession(client_code, pin, pyotp.TOTP(totp_secret).now())
         if not resp or not resp.get("status"):
             raise ProviderError(f"Angel One login failed: {resp.get('message') if resp else 'no response'}")
-        self._api = api
+        self._api, self._login_day = api, date.today()
         return api
 
     def close(self) -> None:

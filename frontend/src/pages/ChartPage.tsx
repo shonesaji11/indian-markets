@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useCalcSeriesList, useCandles, useIngest } from '@/api/queries';
-import { INTERVALS, type Interval } from '@/api/types';
+import { useCalcSeriesList, useCandles, useIngest, useLiveQuotes } from '@/api/queries';
+import { INTERVALS, type Candle, type Interval } from '@/api/types';
 import {
   PriceChart,
   toOhlc,
@@ -9,7 +9,18 @@ import {
   type RangeKind,
   type ValuePoint,
 } from '@/components/charts';
-import { Button, Card, Chip, Delta, EmptyState, ErrorMessage, Field, Select, SwatchPicker } from '@/components/ui';
+import {
+  Button,
+  Card,
+  Chip,
+  Delta,
+  EmptyState,
+  ErrorMessage,
+  Field,
+  FlashValue,
+  Select,
+  SwatchPicker,
+} from '@/components/ui';
 import {
   addIndicator,
   indicatorsCodec,
@@ -21,6 +32,8 @@ import { SERIES_SLOTS, isOverlay, paramsLabel, toChartSeries } from '@/features/
 import { loadChartList } from '@/features/charts/chartList';
 import { RelatedList, type SidePaneProps } from '@/features/charts/RelatedList';
 import { InstrumentPicker } from '@/features/instruments/InstrumentPicker';
+import { liveState, useLiveBar } from '@/features/live/live';
+import { LiveBadge } from '@/features/live/LiveBadge';
 import { WatchlistStar } from '@/features/watchlists/WatchlistStar';
 import { useThemeVersion } from '@/hooks/useTheme';
 import { useUrlState } from '@/hooks/useUrlState';
@@ -29,6 +42,7 @@ import { loadSetting, saveSetting } from '@/lib/storage';
 import { toChartTime } from '@/lib/time';
 
 const slotColor = (slot: number) => cssVar(`--series-${slot}`);
+const NO_CANDLES: Candle[] = [];
 /** Slot n (1-based) is index n - 1 here. */
 const SLOT_COLORS = Array.from({ length: SERIES_SLOTS }, (_, i) => `var(--series-${i + 1})`);
 
@@ -97,6 +111,20 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
   const candles = useCandles(instrumentId, interval);
   const calcs = useCalcSeriesList(instrumentId, interval, indicators);
   const ingest = useIngest();
+  // Live prices move the latest candle and the header while the market is open (and the last price after the
+  // close, until the nightly bar is stored). Not while another view replaces the chart.
+  const live = useLiveQuotes(instrumentId !== undefined ? [instrumentId] : [], !main);
+  const quote = live.data?.quotes.find((q) => q.instrument_id === instrumentId);
+  const liveBar = useLiveBar(candles.data?.candles ?? NO_CANDLES, quote, interval, live.data?.status.today);
+  const liveChart = useMemo(() => {
+    if (!liveBar) return null;
+    const time = toChartTime(liveBar.ts);
+    const color = `${cssVar(liveBar.close >= liveBar.open ? '--up' : '--down')}55`;
+    return {
+      bar: { time, open: liveBar.open, high: liveBar.high, low: liveBar.low, close: liveBar.close },
+      volume: interval === '1d' ? { time, value: liveBar.volume, color } : undefined, // intraday: no volume per bar
+    };
+  }, [liveBar, interval, themeVersion]);
 
   const { ohlc, volume } = useMemo(() => {
     const rows = candles.data?.candles ?? [];
@@ -179,11 +207,19 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
                   {instrument.exchange}:{instrument.symbol}
                 </span>
                 {last && (
-                  <span className="num" style={{ fontSize: 'var(--text-lg)' }}>
-                    {fmt.price(last.close)}
-                  </span>
+                  <FlashValue key={instrument.instrument_id} value={liveBar?.close ?? last.close}>
+                    <span className="num" style={{ fontSize: 'var(--text-lg)' }}>
+                      {fmt.price(liveBar?.close ?? last.close)}
+                    </span>
+                  </FlashValue>
                 )}
-                {change != null && prev && <Delta value={change / prev.close} format={fmt.pctAbs} arrow />}
+                {liveBar && quote ? (
+                  // Live: the day's change vs the previous session's close.
+                  quote.prev_close && <Delta value={quote.ltp / quote.prev_close - 1} format={fmt.pctAbs} arrow />
+                ) : (
+                  change != null && prev && <Delta value={change / prev.close} format={fmt.pctAbs} arrow />
+                )}
+                <LiveBadge state={liveState(live.data?.status, !!liveBar)} />
               </span>
             ) : (
               'Chart'
@@ -258,6 +294,7 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
                 showTime={interval !== '1d'}
                 ranges={ranges}
                 rangeTool={rangeTool}
+                live={liveChart}
                 onRangeAdd={(r) => {
                   setRanges((rs) => [...rs, r]);
                   setRangeTool(null);

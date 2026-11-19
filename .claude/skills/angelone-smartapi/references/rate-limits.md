@@ -29,4 +29,4 @@ Not listed: getOIData, gainersLosers, putCallRatio, OIBuildup, nse/bseIntraday, 
 
 Other per-request caps: Quote 50 tokens (the Market Data page also says 1 req/s), margin batch 50 positions, WebSocket 3 connections and 1000 subscriptions per client code.
 
-Practical pacing (confirmed): candles at 0.4 s spacing get rejected; use >= 0.5 s and a per-minute budget of < 80.
+Practical pacing (measured 19 Nov 2026): `getCandleData` really allows **40 calls a minute**, not 80. Evenly spaced at 46/min and 60/min alike, the 41st call in a minute is rejected and calls succeed again once that minute is over. Pace one call every >= 1.55 s (~38.7/min) and, after a rejection, wait 60 s rather than retrying sooner.

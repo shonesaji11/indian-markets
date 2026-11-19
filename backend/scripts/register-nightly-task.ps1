@@ -3,8 +3,8 @@
 # Remove it with: Unregister-ScheduledTask -TaskName 'Markets nightly update'
 #
 # 17:00 is after NSE's 15:30 close and the closing price (set by ~15:35), so the day's bars are
-# ready for evening analysis. A run takes about 1.5 hours for ~3,000 instruments under Angel
-# One's rate limits, finishing well before SmartAPI sessions expire at midnight. Each run
+# ready for evening analysis. A run takes about 80 minutes for ~3,000 instruments at Angel
+# One's 40 candle requests/minute, finishing well before SmartAPI sessions expire at midnight. Each run
 # re-fetches the latest stored bar, so a bar that wasn't final yet is corrected by the next run.
 # If the PC is asleep at 17:00, the task runs as soon as it wakes (each run logs in fresh).
 

@@ -2,8 +2,10 @@ import {
   CandlestickSeries,
   HistogramSeries,
   LineSeries,
+  LineStyle,
   createChart,
   type IChartApi,
+  type IPriceLine,
   type ISeriesApi,
   type MouseEventParams,
   type Time,
@@ -67,7 +69,11 @@ interface PriceChartProps {
   onRangeAdd?: (range: MeasuredRange) => void;
   /** The forming bar from live prices (same time as the last candle, or later), drawn in a lighter shade. */
   live?: { bar: OhlcPoint; volume?: ValuePoint } | null;
+  /** Horizontal dashed lines at these prices, labelled on the price axis (e.g. price alerts). */
+  priceLines?: readonly { price: number; title: string }[];
 }
+
+const NO_LINES: readonly { price: number; title: string }[] = [];
 
 /** Candlestick chart with optional volume and any number of extra line/histogram series. */
 export function PriceChart({
@@ -81,6 +87,7 @@ export function PriceChart({
   rangeTool = null,
   onRangeAdd,
   live = null,
+  priceLines = NO_LINES,
 }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -219,6 +226,19 @@ export function PriceChart({
   useEffect(() => {
     volumeRef.current?.setData(volume ?? []);
   }, [volume]);
+
+  // Price lines (alerts), amber and dashed; redrawn when the list or the theme changes.
+  useEffect(() => {
+    const candleSeries = candleRef.current;
+    if (!candleSeries || compact) return;
+    const color = cssVar('--warn');
+    const lines: IPriceLine[] = priceLines.map((l) =>
+      candleSeries.createPriceLine({ price: l.price, title: l.title, color, lineWidth: 1, lineStyle: LineStyle.Dashed }),
+    );
+    return () => {
+      if (chartRef.current) lines.forEach((line) => candleSeries.removePriceLine(line)); // else already disposed
+    };
+  }, [priceLines, compact, themeVersion]);
 
   // Live: the forming bar in a lighter shade. When a new slot starts, the bar it replaces is finished and is
   // redrawn in normal colours (the chart can only update its last bar). New stored candles start afresh.

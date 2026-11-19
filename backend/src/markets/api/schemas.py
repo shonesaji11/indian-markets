@@ -102,3 +102,13 @@ class SavedScanIn(BaseModel):
 
 class WatchlistNameIn(BaseModel):
     name: str  # trimmed; must be unique among your lists
+
+
+class AlertIn(BaseModel):
+    direction: str  # above, below
+    price: float
+    note: Optional[str] = None
+
+
+class AlertCreateIn(AlertIn):
+    instrument_id: int

@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 
 from markets.config import Settings, get_settings
-from markets.core.ports import ConstituentSource, LiveFeed, MarketDataProvider
+from markets.core.ports import ConstituentSource, LiveFeed, MarketDataProvider, Notifier
 from markets.engine import IndicatorRegistry, default_registry
+from markets.notifiers import build_notifier
+from markets.pipelines.alerts import AlertService
 from markets.pipelines.breadth import BreadthService
 from markets.pipelines.compute import CalcService
 from markets.pipelines.daily_update import DailyUpdateService
@@ -27,6 +29,7 @@ from markets.providers import build_live_feed, build_provider
 from markets.sources.nse_indices import NseIndexSource
 from markets.storage.duckdb import (
     Database,
+    DuckAlertRepository,
     DuckAthRepository,
     DuckBreadthRepository,
     DuckCalcRepository,
@@ -67,8 +70,10 @@ class Container:
     data_quality: DataQualityService
     repair: RepairService
     live: LiveService  # streams only once started (the API server does; CLI commands don't)
+    alerts: AlertService  # fires only once started, like `live`
 
     def close(self) -> None:
+        self.alerts.stop()
         self.live.stop()
         self.provider.close()
         self.db.close()
@@ -77,7 +82,8 @@ class Container:
 def build_container(settings: Optional[Settings] = None, provider: Optional[MarketDataProvider] = None,
                     db: Optional[Database] = None, constituents: Optional[ConstituentSource] = None,
                     watchlist_specs: Sequence[WatchlistSpec] = WATCHLISTS,
-                    live_feed: Optional[LiveFeed] = None) -> Container:
+                    live_feed: Optional[LiveFeed] = None, notifier: Optional[Notifier] = None) -> Container:
+    """`notifier`: defaults to Telegram when backend/.env sets it up (see notifiers/)."""
     settings = settings or get_settings()
     db = db or Database(settings.db_path)
     migrate(db)
@@ -104,10 +110,12 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
     benchmarks = next((s.members for s in watchlist_specs if s.watchlist_id == "benchmarks"), ())
 
     def always_streamed() -> list[int]:
-        """The Overview's index tiles and your own lists."""
-        return [*watchlists.member_ids("benchmarks"), *(i for wl in watchlists.manual_lists() for i in wl["member_ids"])]
+        """The Overview's index tiles, your own lists and stocks with an active alert."""
+        return [*watchlists.member_ids("benchmarks"), *(i for wl in watchlists.manual_lists() for i in wl["member_ids"]),
+                *alerts.instrument_ids()]
 
     live = LiveService(live_feed or build_live_feed(provider), instruments, provider.name, always_streamed)
+    alerts = AlertService(DuckAlertRepository(db), instruments, live, notifier or build_notifier(settings))
 
     return Container(
         settings=settings,
@@ -132,6 +140,7 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
         data_quality=data_quality,
         repair=repair,
         live=live,
+        alerts=alerts,
         screener=ScreenerService(registry, market, watchlists, DuckSavedScanRepository(db), instruments,
                                  *benchmarks[:1]),
     )

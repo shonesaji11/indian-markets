@@ -19,6 +19,9 @@ import type {
   Instrument,
   Interval,
   LiveQuotes,
+  AlertInput,
+  AlertsResponse,
+  PriceAlert,
   MarketOverview,
   MyWatchlist,
   ParamValue,
@@ -55,7 +58,36 @@ export const keys = {
   myWatchlists: ['my-watchlists'] as const,
   watchlistQuotes: (id: string) => ['watchlist-quotes', id] as const,
   live: (ids: number[]) => ['live', ids] as const,
+  alerts: ['alerts'] as const,
 };
+
+/**
+ * All price alerts. Polls every 5 s while the live feed is up or the market is open (fired alerts show up and
+ * the in-app notice appears), every minute otherwise.
+ */
+export function useAlerts() {
+  return useQuery({
+    queryKey: keys.alerts,
+    queryFn: () => http.get<AlertsResponse>('/alerts'),
+    refetchInterval: (query) => {
+      const live = query.state.data?.live;
+      return live && (live.connected || live.session_open) ? 5000 : 60_000;
+    },
+  });
+}
+
+function useAlertMutation<V, R>(mutationFn: (vars: V) => Promise<R>) {
+  const client = useQueryClient();
+  return useMutation({ mutationFn, onSuccess: () => client.invalidateQueries({ queryKey: keys.alerts }) });
+}
+
+export const useCreateAlert = () =>
+  useAlertMutation((input: AlertInput & { instrument_id: number }) => http.post<PriceAlert>('/alerts', input));
+
+export const useUpdateAlert = () =>
+  useAlertMutation(({ id, ...input }: AlertInput & { id: string }) => http.patch<PriceAlert>(`/alerts/${id}`, input));
+
+export const useDeleteAlert = () => useAlertMutation((id: string) => http.delete<{ deleted: string }>(`/alerts/${id}`));
 
 /**
  * Streamed quotes for these instruments (asking also streams them for the day). Polls every second while

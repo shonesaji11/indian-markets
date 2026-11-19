@@ -178,6 +178,32 @@
 .chart-list__close {
   color: var(--text-secondary);
 }
+/* Per-row control (alert bell): takes no room until the row is hovered or its dropdown is open, so other rows
+   keep their full width for the symbol; always shown on touch screens. */
+.chart-list__action {
+  display: none;
+  align-items: center;
+  padding: 0 2px;
+  border-bottom: 1px solid var(--border);
+}
+.chart-list__row:hover .chart-list__action,
+.chart-list__action:has([aria-expanded='true']) {
+  display: flex;
+}
+@media (hover: none) {
+  .chart-list__action {
+    display: flex;
+  }
+}
+.chart-list__dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--warn);
+  vertical-align: middle;
+}
 .chart-list__remove {
   padding: 0 var(--space-2);
   font: inherit;

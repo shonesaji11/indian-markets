@@ -201,6 +201,43 @@ export interface LiveQuotes {
   quotes: LiveQuote[];
 }
 
+// --- Price alerts (backend pipelines/alerts.py, routers/alerts.py) ---
+
+export type AlertDirection = 'above' | 'below';
+
+export interface PriceAlert {
+  alert_id: string;
+  instrument_id: number;
+  exchange: string;
+  symbol: string;
+  instrument_type: string | null;
+  direction: AlertDirection;
+  price: number;
+  note: string | null;
+  created_at: string;
+  /** Null while active. */
+  triggered_at: string | null;
+  triggered_price: number | null;
+  /** Telegram: sent / failed / off (not set up); null until tried. */
+  notified: 'sent' | 'failed' | 'off' | null;
+  notify_error: string | null;
+  /** Last stored daily close (for "now" when there's no live price). */
+  close: number | null;
+}
+
+export interface AlertsResponse {
+  /** Active first (oldest first), then fired (newest first). */
+  alerts: PriceAlert[];
+  telegram: boolean;
+  live: LiveStatus;
+}
+
+export interface AlertInput {
+  direction: AlertDirection;
+  price: number;
+  note: string | null;
+}
+
 // --- Custom scans (backend engine/screener.py) ---
 
 export type ScanOp = 'gt' | 'gte' | 'lt' | 'lte' | 'crosses_above' | 'crosses_below';

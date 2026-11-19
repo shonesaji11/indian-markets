@@ -1,7 +1,7 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Button, Delta, FlashValue } from '@/components/ui';
 import { fmt } from '@/lib/format';
-import { shortSymbol, type ChartList } from './chartList';
+import { shortSymbol, type ChartList, type ChartListItem } from './chartList';
 import './charts.css';
 
 /** What the chart page hands its side pane (this list, or the Watchlists tab's pane). */
@@ -18,6 +18,8 @@ interface RelatedListProps extends SidePaneProps {
   toolbar?: ReactNode;
   /** Adds a ✕ to each row that calls this. */
   onRemove?: (instrumentId: number) => void;
+  /** A control per row (e.g. the alert bell), shown on hover (always on touch screens). */
+  rowAction?: (item: ChartListItem) => ReactNode;
   /** Shown instead of the rows when the list is empty. */
   empty?: ReactNode;
 }
@@ -26,7 +28,17 @@ const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
 
 /** The list a chart was opened from; click a stock, or use ↑/↓ (J/K), to chart the next one. */
-export function RelatedList({ list, current, onSelect, open, onOpenChange, toolbar, onRemove, empty }: RelatedListProps) {
+export function RelatedList({
+  list,
+  current,
+  onSelect,
+  open,
+  onOpenChange,
+  toolbar,
+  onRemove,
+  rowAction,
+  empty,
+}: RelatedListProps) {
   const { items } = list;
   const index = items.findIndex((i) => i.instrument_id === current);
   const activeRef = useRef<HTMLButtonElement>(null);
@@ -98,6 +110,7 @@ export function RelatedList({ list, current, onSelect, open, onOpenChange, toolb
             >
               <span className="chart-list__symbol" title={item.note ? `${item.symbol} · last bar ${item.note}` : undefined}>
                 {shortSymbol(item.symbol)}
+                {item.marked && <span className="chart-list__dot" title="Has an active alert" />}
                 {item.note && <span className="muted chart-list__note"> · {item.note}</span>}
               </span>
               {item.close !== undefined && (
@@ -107,6 +120,7 @@ export function RelatedList({ list, current, onSelect, open, onOpenChange, toolb
               )}
               <Delta value={item.change} format={fmt.pctAbs} />
             </button>
+            {rowAction && <span className="chart-list__action">{rowAction(item)}</span>}
             {onRemove && (
               <button
                 className="chart-list__remove"

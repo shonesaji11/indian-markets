@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell, type NavItem } from '@/components/layout/AppShell';
+import { AlertNotices } from '@/features/alerts/AlertNotices';
+import { AlertsPage } from '@/pages/AlertsPage';
 import { ChartPage } from '@/pages/ChartPage';
 import { DataPage } from '@/pages/DataPage';
 import { OverviewPage } from '@/pages/OverviewPage';
@@ -12,6 +14,7 @@ const NAV: NavItem[] = [
   { to: '/chart', label: 'Chart' },
   { to: '/scans', label: 'Scans' },
   { to: '/watchlists', label: 'Watchlists' },
+  { to: '/alerts', label: 'Alerts' },
   { to: '/data', label: 'Data' },
 ];
 
@@ -25,9 +28,11 @@ export function App() {
         <Route path="/sector" element={<SectorPage />} />
         <Route path="/watchlists" element={<WatchlistsPage />} />
         <Route path="/stats" element={<Navigate to="/scans" replace />} />
+        <Route path="/alerts" element={<AlertsPage />} />
         <Route path="/data" element={<DataPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      <AlertNotices />
     </AppShell>
   );
 }

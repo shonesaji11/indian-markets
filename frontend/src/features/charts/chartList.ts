@@ -11,6 +11,8 @@ export interface ChartListItem {
   close?: number | null;
   /** Short note after the symbol, e.g. the date of a stock's last bar when it's behind the rest. */
   note?: string;
+  /** Small amber dot after the symbol: the stock has an active price alert (watchlists). */
+  marked?: boolean;
 }
 
 /** Where a chart was opened from: shown as the chart page's side pane, in the order you saw it. */

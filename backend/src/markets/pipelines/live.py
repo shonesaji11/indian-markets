@@ -28,7 +28,7 @@ SESSION_HOURS = (time(9, 15), time(15, 30))
 RETRY_SECONDS = (5, 10, 30, 60)
 
 
-def _within(now: datetime, hours: tuple[time, time]) -> bool:
+def within_hours(now: datetime, hours: tuple[time, time]) -> bool:
     return now.weekday() < 5 and hours[0] <= now.time() < hours[1]
 
 
@@ -56,6 +56,11 @@ class LiveService:
         self._full_logged = False
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._listeners: list[Callable[[int, dict[str, Any]], None]] = []
+
+    def add_listener(self, listener: Callable[[int, dict[str, Any]], None]) -> None:
+        """Called with (instrument_id, quote) for every quote, on the feed's thread: keep it quick."""
+        self._listeners.append(listener)
 
     # ---- API side ----------------------------------------------------------------
 
@@ -80,7 +85,7 @@ class LiveService:
         now = self._clock()
         return {
             "connected": self._connected,
-            "session_open": _within(now, SESSION_HOURS),
+            "session_open": within_hours(now, SESSION_HOURS),
             "today": now.date().isoformat(),
             "last_tick": self._last_tick,
             "lost_at": self._lost_at,
@@ -113,7 +118,7 @@ class LiveService:
         """One pass of the loop: connect during feed hours (retrying after a drop), subscribe what's
         wanted, disconnect outside feed hours."""
         now = self._clock()
-        if not _within(now, FEED_HOURS):
+        if not within_hours(now, FEED_HOURS):
             if self._connected:
                 self._disconnect()
                 log.info("live feed closed for the day")
@@ -197,6 +202,11 @@ class LiveService:
             self._quotes[instrument_id] = quote
             if self._last_tick is None or tick.ts > self._last_tick:
                 self._last_tick = tick.ts
+        for listener in self._listeners:
+            try:
+                listener(instrument_id, quote)
+            except Exception:  # a listener bug must not stop the quotes
+                log.exception("live quote listener failed")
 
     def _on_drop(self) -> None:
         now = self._clock()

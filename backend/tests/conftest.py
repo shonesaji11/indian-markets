@@ -39,7 +39,9 @@ def constituents():
 
 @pytest.fixture
 def container(constituents):
-    c = build_container(settings=Settings(provider="fake"), provider=FakeProvider(), db=Database(":memory:"),
+    # Telegram off explicitly: backend/.env may hold a real bot token, and tests must never send.
+    settings = Settings(provider="fake", telegram_bot_token=None, telegram_chat_id=None)
+    c = build_container(settings=settings, provider=FakeProvider(), db=Database(":memory:"),
                         constituents=constituents, watchlist_specs=TEST_WATCHLISTS)
     c.ingestion.sync_instruments()
     yield c

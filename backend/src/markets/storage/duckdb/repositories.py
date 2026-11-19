@@ -1197,3 +1197,59 @@ class DuckDataQualityRepository:
         return bool(self._db.cursor().execute(
             "UPDATE dq_issues SET status = 'accepted', note = ? WHERE issue_id = ? RETURNING issue_id",
             [note, issue_id]).fetchall())
+
+
+class DuckAlertRepository:
+    """Price alerts. Active = triggered_at is null; `mark_triggered` succeeds once per alert (fire once)."""
+
+    _COLS = ("a.alert_id, a.instrument_id, i.exchange, i.symbol, i.instrument_type, a.direction, a.price, a.note, "
+             "a.created_at, a.triggered_at, a.triggered_price, a.notified, a.notify_error")
+
+    def __init__(self, db: Database):
+        self._db = db
+
+    def all(self) -> list[dict[str, Any]]:
+        """Active alerts first (oldest first), then fired ones (newest first)."""
+        return _records(self._db.cursor(), f"""
+            SELECT {self._COLS} FROM alerts a JOIN instruments i USING (instrument_id)
+            ORDER BY a.triggered_at IS NOT NULL, a.triggered_at DESC, a.created_at, a.alert_id""")
+
+    def get(self, alert_id: str) -> Optional[dict[str, Any]]:
+        rows = _records(self._db.cursor(), f"""
+            SELECT {self._COLS} FROM alerts a JOIN instruments i USING (instrument_id) WHERE a.alert_id = ?""",
+                        [alert_id])
+        return rows[0] if rows else None
+
+    def active(self) -> list[dict[str, Any]]:
+        return [r for r in self.all() if r["triggered_at"] is None]
+
+    def create(self, instrument_id: int, direction: str, price: float, note: Optional[str], now: datetime) -> str:
+        alert_id = _new_id()
+        self._db.cursor().execute(
+            "INSERT INTO alerts (alert_id, instrument_id, direction, price, note, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            [alert_id, instrument_id, direction, price, note, now])
+        return alert_id
+
+    def update(self, alert_id: str, direction: str, price: float, note: Optional[str]) -> bool:
+        """Change an active alert; False if it doesn't exist or has fired."""
+        return bool(self._db.cursor().execute(
+            "UPDATE alerts SET direction = ?, price = ?, note = ? WHERE alert_id = ? AND triggered_at IS NULL "
+            "RETURNING alert_id", [direction, price, note, alert_id]).fetchall())
+
+    def delete(self, alert_id: str) -> bool:
+        return bool(self._db.cursor().execute(
+            "DELETE FROM alerts WHERE alert_id = ? RETURNING alert_id", [alert_id]).fetchall())
+
+    def mark_triggered(self, alert_id: str, ts: datetime, price: float) -> bool:
+        """Fire an active alert; False if it already fired, was deleted, or never existed."""
+        return bool(self._db.cursor().execute(
+            "UPDATE alerts SET triggered_at = ?, triggered_price = ? WHERE alert_id = ? AND triggered_at IS NULL "
+            "RETURNING alert_id", [ts, price, alert_id]).fetchall())
+
+    def set_notified(self, alert_id: str, status: str, error: Optional[str] = None) -> None:
+        self._db.cursor().execute("UPDATE alerts SET notified = ?, notify_error = ? WHERE alert_id = ?",
+                                  [status, error, alert_id])
+
+    def unnotified(self) -> list[dict[str, Any]]:
+        """Fired alerts whose message was never tried (the app stopped in between)."""
+        return [r for r in self.all() if r["triggered_at"] is not None and r["notified"] is None]

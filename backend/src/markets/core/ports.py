@@ -10,11 +10,11 @@ float columns open, high, low, close, volume.
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Iterable, Optional, Protocol, Sequence
+from typing import Any, Callable, Iterable, Optional, Protocol, Sequence
 
 import pandas as pd
 
-from markets.core.models import DateRange, Instrument, Interval, ProviderInstrument
+from markets.core.models import DateRange, Instrument, Interval, LiveTick, ProviderInstrument
 
 
 class MarketDataProvider(Protocol):
@@ -54,6 +54,27 @@ class MarketDataProvider(Protocol):
 
     def close(self) -> None:
         """Release the session (log out). Safe to call when never logged in."""
+        ...
+
+
+class LiveFeed(Protocol):
+    """A streaming quote connection (one at a time). Instruments are referred to as (exchange, provider token)
+    pairs, the same token `MarketDataProvider.list_instruments` gives. Callbacks run on the feed's own thread."""
+
+    max_subscriptions: int
+
+    def connect(self, on_tick: Callable[[LiveTick], None], on_close: Callable[[], None]) -> None:
+        """Open the connection; returns once it is open, raises (ideally ProviderError) if it can't.
+        Every quote goes to `on_tick`; `on_close` is called once if the connection drops by itself."""
+        ...
+
+    def subscribe(self, refs: Sequence[tuple[str, str]]) -> None:
+        """Start streaming these (exchange, token) pairs on the open connection. Each sends its latest
+        quote straight away, also outside market hours. Unsupported exchanges are skipped."""
+        ...
+
+    def close(self) -> None:
+        """Close the connection (no `on_close` call). Safe to call when not connected."""
         ...
 
 

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence
 
 from markets.config import Settings, get_settings
-from markets.core.ports import ConstituentSource, MarketDataProvider
+from markets.core.ports import ConstituentSource, LiveFeed, MarketDataProvider
 from markets.engine import IndicatorRegistry, default_registry
 from markets.pipelines.breadth import BreadthService
 from markets.pipelines.compute import CalcService
@@ -18,11 +18,12 @@ from markets.pipelines.daily_update import DailyUpdateService
 from markets.pipelines.data_quality import DataQualityService
 from markets.pipelines.highs import AthService
 from markets.pipelines.ingest import IngestionService
+from markets.pipelines.live import LiveService
 from markets.pipelines.market_overview import MarketOverviewService
 from markets.pipelines.repair import RepairService
 from markets.pipelines.screener import ScreenerService
 from markets.pipelines.watchlists import WatchlistService
-from markets.providers import build_provider
+from markets.providers import build_live_feed, build_provider
 from markets.sources.nse_indices import NseIndexSource
 from markets.storage.duckdb import (
     Database,
@@ -65,15 +66,18 @@ class Container:
     ath: AthService
     data_quality: DataQualityService
     repair: RepairService
+    live: LiveService  # streams only once started (the API server does; CLI commands don't)
 
     def close(self) -> None:
+        self.live.stop()
         self.provider.close()
         self.db.close()
 
 
 def build_container(settings: Optional[Settings] = None, provider: Optional[MarketDataProvider] = None,
                     db: Optional[Database] = None, constituents: Optional[ConstituentSource] = None,
-                    watchlist_specs: Sequence[WatchlistSpec] = WATCHLISTS) -> Container:
+                    watchlist_specs: Sequence[WatchlistSpec] = WATCHLISTS,
+                    live_feed: Optional[LiveFeed] = None) -> Container:
     settings = settings or get_settings()
     db = db or Database(settings.db_path)
     migrate(db)
@@ -99,6 +103,12 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
     repair = RepairService(dq_repo, candles, calcs, ingestion, watchlists, ath_repo)
     benchmarks = next((s.members for s in watchlist_specs if s.watchlist_id == "benchmarks"), ())
 
+    def always_streamed() -> list[int]:
+        """The Overview's index tiles and your own lists."""
+        return [*watchlists.member_ids("benchmarks"), *(i for wl in watchlists.manual_lists() for i in wl["member_ids"])]
+
+    live = LiveService(live_feed or build_live_feed(provider), instruments, provider.name, always_streamed)
+
     return Container(
         settings=settings,
         db=db,
@@ -121,6 +131,7 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
         ath=ath,
         data_quality=data_quality,
         repair=repair,
+        live=live,
         screener=ScreenerService(registry, market, watchlists, DuckSavedScanRepository(db), instruments,
                                  *benchmarks[:1]),
     )

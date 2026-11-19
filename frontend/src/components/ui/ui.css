@@ -379,6 +379,27 @@
   margin-top: var(--space-2);
 }
 
+/* ---------- Live value flash (FlashValue) ---------- */
+.ui-flash {
+  border-radius: 4px;
+}
+.ui-flash--up {
+  animation: ui-flash-up 0.7s ease-out;
+}
+.ui-flash--down {
+  animation: ui-flash-down 0.7s ease-out;
+}
+@keyframes ui-flash-up {
+  from {
+    background: color-mix(in srgb, var(--up) 30%, transparent);
+  }
+}
+@keyframes ui-flash-down {
+  from {
+    background: color-mix(in srgb, var(--down) 30%, transparent);
+  }
+}
+
 /* ---------- Meter ---------- */
 .ui-meter {
   display: grid;

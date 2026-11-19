@@ -18,6 +18,7 @@ import type {
   IngestRun,
   Instrument,
   Interval,
+  LiveQuotes,
   MarketOverview,
   MyWatchlist,
   ParamValue,
@@ -52,7 +53,26 @@ export const keys = {
   savedScans: ['saved-scans'] as const,
   myWatchlists: ['my-watchlists'] as const,
   watchlistQuotes: (id: string) => ['watchlist-quotes', id] as const,
+  live: (ids: number[]) => ['live', ids] as const,
 };
+
+/**
+ * Streamed quotes for these instruments (asking also streams them for the day). Polls every second while
+ * the feed is up or the market is open, every 30 s otherwise; pauses in background tabs.
+ */
+export function useLiveQuotes(instrumentIds: number[], enabled = true) {
+  const ids = [...new Set(instrumentIds)].sort((a, b) => a - b);
+  return useQuery({
+    queryKey: keys.live(ids),
+    queryFn: () => http.get<LiveQuotes>('/live/quotes', { ids }),
+    enabled: enabled && ids.length > 0,
+    placeholderData: keepPreviousData,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status && (status.connected || status.session_open) ? 1000 : 30_000;
+    },
+  });
+}
 
 export function useInstrumentSearch(q: string, exchange?: string) {
   return useQuery({

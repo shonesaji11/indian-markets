@@ -93,3 +93,19 @@ class IngestionResult:
     error: Optional[str] = None
     run_id: Optional[str] = None
     started_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass(frozen=True)
+class LiveTick:
+    """One streamed quote for an instrument, identified the way its provider streams it.
+    `ts` is the exchange's time of the quote (naive IST); `prev_close` is the previous session's close."""
+
+    exchange: str
+    token: str
+    ts: datetime
+    ltp: float
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    prev_close: Optional[float] = None
+    volume: Optional[float] = None

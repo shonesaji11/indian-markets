@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from markets.api.routers import calcs, data, data_quality, instruments, market, scans, views
+from markets.api.routers import calcs, data, data_quality, instruments, live, market, scans, views
 from markets.bootstrap import Container, build_container
 from markets.config import get_settings
 
@@ -16,6 +16,8 @@ def create_app(container: Optional[Container] = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         owned = container is None
         app.state.container = container or build_container()
+        if owned:  # the real server streams live quotes; tests drive LiveService themselves
+            app.state.container.live.start()
         yield
         if owned:
             app.state.container.close()
@@ -28,7 +30,7 @@ def create_app(container: Optional[Container] = None) -> FastAPI:
         allow_headers=["*"],
     )
     for router in (market.router, instruments.router, data.router, calcs.router, scans.router, views.router,
-                   data_quality.router):
+                   data_quality.router, live.router):
         app.include_router(router, prefix="/api")
 
     @app.get("/api/health")

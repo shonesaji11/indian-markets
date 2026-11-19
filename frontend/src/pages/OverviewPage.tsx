@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMarketOverview, useSectorBreadth, useSectorRotation, useWatchlists } from '@/api/queries';
+import { useLiveQuotes, useMarketOverview, useSectorBreadth, useSectorRotation, useWatchlists } from '@/api/queries';
 import type { MarketRow } from '@/api/types';
 import { Button, EmptyState, ErrorMessage, Field, PageHeader, Select, TextInput } from '@/components/ui';
 import { toListItems, useOpenChart } from '@/features/charts/chartList';
+import { liveFigures, liveState, quoteMap } from '@/features/live/live';
+import { LiveBadge } from '@/features/live/LiveBadge';
 import { BenchmarkTiles } from '@/features/overview/BenchmarkTiles';
 import { BreadthCard } from '@/features/overview/BreadthCard';
 import { ScanCard } from '@/features/overview/ScanCard';
@@ -62,6 +64,13 @@ export function OverviewPage() {
   const rotation = useSectorRotation(universe, rankBy, rotationPeriod, near, rotationAgo, minStocks, asOf || undefined,
     sectorMode === 'rotation' && !agoValueError(rotationAgo));
   const data = overview.data;
+  // Index tiles go live during market hours, and only on the latest session (never with "As of").
+  const live = useLiveQuotes((data?.benchmarks ?? []).map((b) => b.instrument_id), !asOf);
+  const quotes = useMemo(() => quoteMap(asOf ? undefined : live.data?.quotes), [asOf, live.data]);
+  const liveBadge = liveState(
+    asOf ? undefined : live.data?.status,
+    (data?.benchmarks ?? []).some((b) => liveFigures(b.ts, quotes.get(b.instrument_id))),
+  );
   const universeLabel = watchlists.find((w) => w.watchlist_id === universe)?.name ?? universe;
   const universeOptions = watchlists
     .filter((w) => STOCK_UNIVERSES.has(w.watchlist_id))
@@ -98,7 +107,18 @@ export function OverviewPage() {
 
       <ErrorMessage error={overview.error} />
 
-      <BenchmarkTiles rows={data?.benchmarks} loading={overview.isLoading} onSelect={open('Benchmarks', data?.benchmarks)} />
+      {liveBadge && (
+        <div className="live-badge-row">
+          <LiveBadge state={liveBadge} />
+        </div>
+      )}
+      <BenchmarkTiles
+        rows={data?.benchmarks}
+        loading={overview.isLoading}
+        onSelect={open('Benchmarks', data?.benchmarks)}
+        quotes={quotes}
+        stale={liveBadge?.kind === 'lost'}
+      />
 
       {data && !data.as_of ? (
         <EmptyState>

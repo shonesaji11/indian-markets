@@ -1,9 +1,9 @@
-"""Market data adapters implementing markets.core.ports.MarketDataProvider."""
+"""Market data adapters implementing markets.core.ports.MarketDataProvider (and LiveFeed)."""
 
 from __future__ import annotations
 
 from markets.config import Settings
-from markets.core.ports import MarketDataProvider
+from markets.core.ports import LiveFeed, MarketDataProvider
 
 
 class ProviderError(RuntimeError):
@@ -25,3 +25,14 @@ def build_provider(settings: Settings) -> MarketDataProvider:
             totp_secret=settings.angel_totp_secret,
         )
     raise ValueError(f"unknown provider '{settings.provider}'")
+
+
+def build_live_feed(provider: MarketDataProvider) -> LiveFeed:
+    """The provider's own stream (sharing its login), or a silent fake for providers without one."""
+    if provider.name == "angelone":
+        from markets.providers.angelone_stream import AngelOneStream
+
+        return AngelOneStream(provider.stream_auth)
+    from markets.providers.fake import FakeLiveFeed
+
+    return FakeLiveFeed()

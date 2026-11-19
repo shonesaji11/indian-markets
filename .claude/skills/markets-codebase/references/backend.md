@@ -6,15 +6,15 @@ Python >= 3.9, package `markets` (`backend/pyproject.toml`; extras `angelone`, `
 
 | File | Symbols |
 |---|---|
-| `core/models.py` | `CANDLE_COLUMNS`; `Interval` enum (`.duration`); dataclasses `Instrument`, `ProviderInstrument`, `DateRange` (`.chunks(max_span)` splits windows), `IngestionResult` |
-| `core/ports.py` | Protocols: `MarketDataProvider` (`list_instruments`, `fetch_candles`, `last_trade_dates`, `close`), `ConstituentSource`/`Constituent`, `InstrumentRepository`, `CandleRepository`, `IngestionLog`, `CalcRepository` |
+| `core/models.py` | `CANDLE_COLUMNS`; `Interval` enum (`.duration`); dataclasses `Instrument`, `ProviderInstrument`, `DateRange` (`.chunks(max_span)` splits windows), `IngestionResult`, `LiveTick` (one streamed quote: exchange, token, ts, ltp, open/high/low, prev_close, volume) |
+| `core/ports.py` | Protocols: `MarketDataProvider` (`list_instruments`, `fetch_candles`, `last_trade_dates`, `close`), `LiveFeed` (`max_subscriptions`, `connect(on_tick, on_close)`, `subscribe(refs)`, `close`; refs = (exchange, provider token)), `ConstituentSource`/`Constituent`, `InstrumentRepository`, `CandleRepository`, `IngestionLog`, `CalcRepository` |
 
 ## Wiring and config
 
 | File | Symbols |
 |---|---|
 | `config.py` | `Settings` (env `MARKETS_*`, `backend/.env`), `get_settings()` (cached), `BACKEND_DIR` |
-| `bootstrap.py` | `Container` dataclass (db, all repos, registry, provider, services incl. `screener`, `data_quality`, `ath`, `repair`; `.close()`), `build_container(settings, provider, db, ...)` (runs migrations) |
+| `bootstrap.py` | `Container` dataclass (db, all repos, registry, provider, services incl. `screener`, `data_quality`, `ath`, `repair`, `live`; `.close()` stops the live feed), `build_container(settings, provider, db, ..., live_feed)` (runs migrations; `always_streamed` = benchmarks + your lists) |
 | `universes.py` | `WatchlistSpec`, `WATCHLISTS` (nifty500, nifty50, niftytotalmarket, nse_traded, benchmarks, sectors), `DEFAULT_UNIVERSE = "nifty500"`, `BREADTH_UNIVERSES`, `BREADTH_PERIODS` (10, 20, 50, 200: stored daily) |
 | `cli.py` | `main()`; commands `init-db`, `sync-instruments`, `search`, `ingest`, `compute`, `coverage`, `update` (nightly), `dq report|check|accept` (falls back to the API when the server holds the DB), `breadth [--backfill]`, `highs [--rebuild]` (all-time-high cache), `repair` (the nightly steps after downloading, now), `watchlists`, `serve`. `update`, `breadth`, `highs` and `repair` go through the running API when the server holds the DB (`_post_api`). `update [--scheduled]` also appends a short per-run block to `backend/logs/nightly-summary.log` (`summary_block`, `_append_summary`) |
 
@@ -22,9 +22,10 @@ Python >= 3.9, package `markets` (`backend/pyproject.toml`; extras `angelone`, `
 
 | File | Symbols |
 |---|---|
-| `providers/__init__.py` | `ProviderError`, `build_provider(settings)` → Angel One or Fake |
-| `providers/angelone.py` | `AngelOneProvider` (login via TOTP, `list_instruments` from `SCRIP_MASTER_URL`, `fetch_candles` chunked per `_INTERVALS` max-days, rate-limited by `CANDLE_RATE_LIMITS` (one call per 1.55 s: Angel really allows 40/min), re-login on `_TOKEN_ERRORS`; `last_trade_dates` via `getMarketData` FULL in batches of `QUOTE_BATCH`=50 under `QUOTE_RATE_LIMITS`; every call goes through `_call` (rate limit + retries, a 60 s wait after a rate-limit rejection); `_INSTRUMENT_TYPES` maps `""`→EQ, `AMXIDX`→INDEX) |
-| `providers/fake.py` | `FakeProvider`: deterministic synthetic universe + candles for tests/offline |
+| `providers/__init__.py` | `ProviderError`, `build_provider(settings)` → Angel One or Fake, `build_live_feed(provider)` → `AngelOneStream` (shares the provider's login) or `FakeLiveFeed` |
+| `providers/angelone.py` | `AngelOneProvider` (login via TOTP, `list_instruments` from `SCRIP_MASTER_URL`, `fetch_candles` chunked per `_INTERVALS` max-days, rate-limited by `CANDLE_RATE_LIMITS` (one call per 1.55 s: Angel really allows 40/min), re-login on `_TOKEN_ERRORS` and on a new day (sessions end at midnight); `stream_auth()` = WebSocket headers from the same login; `last_trade_dates` via `getMarketData` FULL in batches of `QUOTE_BATCH`=50 under `QUOTE_RATE_LIMITS`; every call goes through `_call` (rate limit + retries, a 60 s wait after a rate-limit rejection); `_INSTRUMENT_TYPES` maps `""`→EQ, `AMXIDX`→INDEX) |
+| `providers/fake.py` | `FakeProvider`: deterministic synthetic universe + candles for tests/offline; `FakeLiveFeed` (silent until a test calls `emit(tick)` / `drop()`; `fail_connect`) |
+| `providers/angelone_stream.py` | `AngelOneStream(auth)`: SmartStream 2.0 WebSocket as a `LiveFeed` (own client on websocket-client, not the SDK's), Quote mode; `parse_quote_packet(bytes)` → `LiveTick` (paise → rupees, epoch ms → naive IST, zero prices → None); `EXCHANGE_TYPES`, `MAX_SUBSCRIPTIONS`=1000 per connection |
 | `providers/ratelimit.py` | `RateLimiter(limits=[(max_calls, per_seconds), ...])`, sliding windows; `.acquire()` blocks until every window allows a call |
 | `sources/nse_indices.py` | `NseIndexSource.constituents(index)` downloads niftyindices.com CSVs → `NseConstituent` (`_FILE_NAMES` for slugs whose file isn't `ind_<slug>list.csv`) |
 
@@ -56,6 +57,7 @@ Python >= 3.9, package `markets` (`backend/pyproject.toml`; extras `angelone`, `
 | `pipelines/highs.py` | `AthService.refresh(full=False)`: keeps `daily_ath` current per instrument (stocks with daily bars ingested since `derived_state.ath_watermark` recomputed from their earliest such bar; first run / `ATH_VERSION` bump / `full` = everything); runs nightly, before every all-time-high read, and via `markets highs` |
 | `pipelines/snapshots.py` | Shared by cross-sectional services: `universe_members(universe, as_of, ...)` (point-in-time watchlist, or `ALL_TRACKED`="all"), `latest_session(snap)`, `clean`, `records(df, columns)` (JSON-safe rows) |
 | `pipelines/screener.py` | `ScreenerService`: `fields()`, `run(filter, universe, as_of, include_indices, industry=None, columns=())` (`industry` = one sector; `columns` = extra operands returned, not filtered on) → `{as_of, timeframe, universe, columns, rows}`, `performance(ids, start, end)` (basket vs the benchmark, default `NSE:Nifty 50` = first `benchmarks` member; a non-trading `start` picks on the session before it; ValueError if end < start; used by Scans and the Watchlists Performance view), `saved_scans()`, `save(name, definition)` (upsert by name), `delete(id)` |
+| `pipelines/live.py` | `LiveService(feed, instruments, provider, base_ids, clock)`: one streaming connection in `FEED_HOURS` (09:00–16:15 IST weekdays; reconnects after `RETRY_SECONDS` 5/10/30/60), latest quote per instrument in memory only (never written to the DB); streams `base_ids` + whatever `watch(ids)` asked for that day (all feed calls on its own thread); `quotes(ids)`, `status()` (connected, session_open, today, last_tick, lost_at), `start`/`stop`, `step()` (one loop pass, for tests) |
 | `pipelines/market_overview.py` | `MarketOverviewService.overview(universe, as_of, limit)` (benchmarks, sectors, breadth, scans, sparklines), `.scan_catalog()`; `ROW_COLUMNS` |
 
 ## storage/duckdb/
@@ -86,7 +88,7 @@ DB file: `backend/data/markets.duckdb`.
 
 | File | Contents |
 |---|---|
-| `app.py` | `create_app(container)`: lifespan builds/closes the Container, CORS, routers, `GET /api/health`; `main.py` = uvicorn entry |
+| `app.py` | `create_app(container)`: lifespan builds/closes the Container (and starts its live feed; not when a container is passed in, as tests do), CORS, routers, `GET /api/health`; `main.py` = uvicorn entry |
 | `deps.py` | `get_container(request)` |
 | `schemas.py` | `InstrumentOut`, `CandleOut`, `CandleSeriesOut`, `IndicatorOut`, `CalcRunIn`, `CalcSeriesOut`, `IngestIn`, `IngestAccepted`, `ScanRunIn`, `ScanPerformanceIn`, `DqCheckIn`, `DqAcceptIn`, `SavedScanIn`, `WatchlistNameIn` |
 | `routers/instruments.py` | `GET /instruments?q&exchange&instrument_type&limit`, `GET /instruments/{id}`, `POST /instruments/sync` |
@@ -95,9 +97,10 @@ DB file: `backend/data/markets.duckdb`.
 | `routers/market.py` | `GET /market/overview?as_of&universe&limit`, `GET /watchlists`, `GET /watchlists/{id}/members`; your own lists: `GET/POST /watchlists/mine`, `PATCH/DELETE /watchlists/mine/{id}`, `PUT/DELETE /watchlists/mine/{id}/members/{instrument_id}` (idempotent), `GET /watchlists/mine/{id}/quotes` (stocks in the order added + last close/change; 404 unknown or NSE list, 422 bad name); `POST /jobs/daily-update`, `GET /market/sector-breadth?universe&as_of&periods=10&periods=20&near_pct=10&near_basis=52w|ath`, `GET /market/sector-rotation?universe&as_of&rank_by=ma|near_high&period=50&near_pct&near_basis&ago_n=1&ago_unit=w&min_stocks=5` (422 on a bad offset, setting or too little history), `POST /jobs/breadth?backfill`, `POST /jobs/highs?rebuild`, `POST /jobs/repair` (409 while the nightly update runs) |
 | `routers/scans.py` | `GET /scans/fields`, `POST /scans/run` (422 on bad filter), `POST /scans/performance` (basket since a scan date, 422 if end < start), `GET/POST /scans/saved`, `DELETE /scans/saved/{id}` |
 | `routers/data_quality.py` | `GET /dq/issues` (status open/resolved/accepted/all, check, instrument), `POST /dq/check` (`DqCheckIn`), `POST /dq/issues/{id}/accept` (`DqAcceptIn`, note required) |
+| `routers/live.py` | `GET /live/quotes?ids=…` → `{status, quotes}` (also streams the ids for the day; 422 above 1000 ids) |
 | `routers/views.py` | `GET /views/daily-stats?as_of&instrument_id&limit` (no longer used by the UI) |
 
 ## Tests and scripts
 
-- `backend/tests/`: `conftest.py` (fixtures: `container` = FakeProvider + in-memory DuckDB + fake index constituents, `reliance_id`, ...), `test_api.py`, `test_breadth.py`, `test_highs.py` (all-time-high cache, near-high breadth), `test_repair.py` (nightly repair), `test_engine.py`, `test_market.py`, `test_data_quality.py`, `test_performance.py`, `test_screener.py`, `test_storage.py`, `test_watchlists.py`. Run with `pytest` from `backend/` using `.venv`.
+- `backend/tests/`: `conftest.py` (fixtures: `container` = FakeProvider + in-memory DuckDB + fake index constituents, `reliance_id`, ...), `test_api.py`, `test_breadth.py`, `test_highs.py` (all-time-high cache, near-high breadth), `test_live.py` (stream packet parsing, LiveService, `/live/quotes`), `test_angelone.py` (provider retries, rate limits, secret masking), `test_repair.py` (nightly repair), `test_engine.py`, `test_market.py`, `test_data_quality.py`, `test_performance.py`, `test_screener.py`, `test_storage.py`, `test_watchlists.py`. Run with `pytest` from `backend/` using `.venv`.
 - `backend/scripts/nightly-update.ps1` (runs `markets update --scheduled`; logs to `logs/update-YYYY-MM-DD.log`, kept 30 days; a failed run also gets a line in `logs/nightly-summary.log`, which is never pruned), `register-nightly-task.ps1` (Windows Task Scheduler).

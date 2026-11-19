@@ -168,6 +168,39 @@ export interface WatchlistQuote {
   pct_change: number | null;
 }
 
+// --- Live quotes (backend pipelines/live.py, routers/live.py) ---
+
+/** Latest streamed quote. `ts` is the exchange's time (naive IST), possibly from an earlier day. */
+export interface LiveQuote {
+  instrument_id: number;
+  ts: string;
+  ltp: number;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  /** The previous session's close, as the stream reports it (already adjusted on split/bonus days). */
+  prev_close: number | null;
+  /** Day's volume so far (0 for indices). */
+  volume: number | null;
+}
+
+export interface LiveStatus {
+  connected: boolean;
+  /** 09:15–15:30 IST on a weekday (holidays included: no quotes come then). */
+  session_open: boolean;
+  /** Today's date in IST, "YYYY-MM-DD". */
+  today: string;
+  /** Exchange time of the newest quote received. */
+  last_tick: string | null;
+  /** When the feed dropped (or first failed to connect); null while connected. */
+  lost_at: string | null;
+}
+
+export interface LiveQuotes {
+  status: LiveStatus;
+  quotes: LiveQuote[];
+}
+
 // --- Custom scans (backend engine/screener.py) ---
 
 export type ScanOp = 'gt' | 'gte' | 'lt' | 'lte' | 'crosses_above' | 'crosses_below';

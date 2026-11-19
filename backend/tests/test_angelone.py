@@ -1,4 +1,5 @@
 import logging
+from datetime import date
 
 import pytest
 
@@ -33,7 +34,7 @@ def _provider(monkeypatch, fail, retries=4):
     monkeypatch.setattr("markets.providers.angelone.time.sleep", slept.append)
     p = AngelOneProvider("k", "c", "p", "t", max_retries=retries)
     p._limiter = _NoLimit()
-    p._api = _FakeSession(fail)
+    p._api, p._login_day = _FakeSession(fail), date.today()  # a session logged in today
     return p, slept
 
 
@@ -97,8 +98,6 @@ class _QuoteSession:
 
 
 def test_last_trade_dates_batches_by_50(monkeypatch):
-    from datetime import date
-
     p, _ = _provider(monkeypatch, fail=0)
     p._quote_limiter = _NoLimit()
     p._api = _QuoteSession()

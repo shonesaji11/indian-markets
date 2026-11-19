@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useCalcSeriesList, useCandles, useIngest, useLiveQuotes } from '@/api/queries';
+import { useCalcSeriesList, useCandles, useLiveQuotes, useRefreshCandles } from '@/api/queries';
 import { INTERVALS, type Candle, type Interval } from '@/api/types';
 import {
   PriceChart,
@@ -10,6 +10,7 @@ import {
   type ValuePoint,
 } from '@/components/charts';
 import {
+  Badge,
   Button,
   Card,
   Chip,
@@ -110,7 +111,14 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
   const toggleTool = (kind: RangeKind) => setRangeTool((t) => (t === kind ? null : kind));
   const candles = useCandles(instrumentId, interval);
   const calcs = useCalcSeriesList(instrumentId, interval, indicators);
-  const ingest = useIngest();
+  // Download what this chart is missing on open: intraday always (from its last stored bar), daily only when
+  // none are stored (the nightly update keeps stored daily bars current). Not while another view replaces it.
+  const refresh = useRefreshCandles(
+    instrumentId,
+    interval,
+    !main && (interval !== '1d' || (candles.isSuccess && candles.data.candles.length === 0)),
+  );
+  const refreshError = refresh.error instanceof Error ? refresh.error.message : '';
   // Live prices move the latest candle and the header while the market is open (and the last price after the
   // close, until the nightly bar is stored). Not while another view replaces the chart.
   const live = useLiveQuotes(instrumentId !== undefined ? [instrumentId] : [], !main);
@@ -220,6 +228,17 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
                   change != null && prev && <Delta value={change / prev.close} format={fmt.pctAbs} arrow />
                 )}
                 <LiveBadge state={liveState(live.data?.status, !!liveBar)} />
+                {last && refresh.isFetching && <Badge>Fetching bars since {fmt.shortDate(last.ts)}…</Badge>}
+                {last && refresh.isError && !refresh.isFetching && (
+                  <>
+                    <span title={refreshError}>
+                      <Badge tone="warn">Couldn’t fetch bars since {fmt.shortDate(last.ts)}</Badge>
+                    </span>
+                    <Button size="sm" onClick={() => refresh.refetch()}>
+                      Retry
+                    </Button>
+                  </>
+                )}
               </span>
             ) : (
               'Chart'
@@ -259,18 +278,6 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
                     </Button>
                   </>
                 )}
-                <Button
-                  size="sm"
-                  loading={ingest.isPending}
-                  onClick={() =>
-                    ingest.mutate({
-                      instrument_ids: [instrument.instrument_id],
-                      interval,
-                    })
-                  }
-                >
-                  Fetch latest
-                </Button>
               </>
             )
           }
@@ -281,9 +288,18 @@ export function ChartPage({ sidePane, toolbarStart, main }: ChartPageProps) {
           {instrumentId === undefined ? (
             <EmptyState>Pick an instrument to chart.</EmptyState>
           ) : ohlc.length === 0 && !candles.isLoading ? (
-            <EmptyState>
-              No {interval} candles stored for this instrument yet. Use “Fetch latest” to download history.
-            </EmptyState>
+            refresh.isError && !refresh.isFetching ? (
+              <EmptyState>
+                Couldn’t download {interval} bars: {refreshError}.{' '}
+                <Button size="sm" onClick={() => refresh.refetch()}>
+                  Retry
+                </Button>
+              </EmptyState>
+            ) : refresh.isSuccess && !refresh.isFetching && !candles.isFetching ? (
+              <EmptyState>Angel One has no {interval} bars for this instrument.</EmptyState>
+            ) : (
+              <EmptyState>Downloading {interval} history from Angel One…</EmptyState>
+            )
           ) : (
             <div style={{ padding: '8px 4px 4px' }}>
               <PriceChart

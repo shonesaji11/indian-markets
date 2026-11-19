@@ -28,6 +28,29 @@ def candles(instrument_id: int, interval: Interval = Interval.D1, start: Optiona
     }
 
 
+@router.post("/candles/{instrument_id}/refresh")
+def refresh_candles(instrument_id: int, interval: Interval = Interval.D1, c: Container = Depends(get_container)) -> dict:
+    """Download what's missing for one chart, now: from the last stored bar (or the interval's default history)
+    up to now. Waits for it: ~2 s, longer while the nightly update is using the download allowance."""
+    try:
+        result = c.ingestion.ingest(instrument_id, interval)
+    except KeyError as exc:  # unknown instrument, or one the provider has no token for
+        raise HTTPException(404, str(exc).strip("'\""))
+    if result.status != "ok":
+        raise HTTPException(502, _plain_reason(result.error or ""))
+    return {"rows": result.rows}
+
+
+def _plain_reason(error: str) -> str:
+    """A download error in plain words (the full error is in the log and in GET /ingest/runs)."""
+    lowered = error.lower()
+    if "exceeding access rate" in lowered:
+        return "Angel One's download limit was hit; try again in a minute"
+    if "login failed" in lowered or "credentials missing" in lowered:
+        return "Angel One login failed"
+    return "Angel One didn't return the bars"
+
+
 @router.get("/coverage")
 def coverage(c: Container = Depends(get_container)) -> list[dict]:
     """What is stored: one row per instrument and interval."""

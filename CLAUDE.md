@@ -26,6 +26,7 @@ All rules, preferences and project knowledge live in the project: this file, `BO
 - Keep code simple and concise. Prefer the smallest change that solves the problem over a larger refactor, as long as speed doesn't suffer.
 - Prefer vectorized code (pandas/NumPy/DuckDB SQL) over Python loops for data work.
 - No speculative abstractions, options or layers that nothing uses yet.
+- Nothing in the browser console: no `console.*` calls (or `debugger`) in shipped frontend code. Use them only temporarily while building or checking edge cases, and remove them before committing. Secrets never reach the browser in any form.
 
 ## Editing code safely
 - Find the code via the `markets-codebase` map and a search for its name, then read the exact lines before changing them. Never edit by cutting between two places whose position you assumed.
@@ -63,6 +64,7 @@ All rules, preferences and project knowledge live in the project: this file, `BO
 - Commit message: a summary of the changes made. A short subject line naming the change, then a body listing what changed and where (features, files/areas, docs), in plain words.
 - Review the file list (`git status --short`): no `.env`, `ngrok-policy.yml`, logs, `*.duckdb`, or other local/secret files staged. New secret files get a `.gitignore` entry first.
 - Scan the staged diff (`git diff --cached`) for credentials: API keys, passwords, PINs, TOTP secrets, tokens (`Bearer`, `eyJ...` JWTs), `authtoken`, IPs/MAC addresses, real account or client codes. Example files must hold placeholders only.
+- Search `frontend/src` for `console.` and `debugger`: remove any found (see Code style).
 - If anything turns up, unstage it, move the value to a gitignored file, and tell me before committing.
 
 ## Branches and pull requests (several chats work here at once)

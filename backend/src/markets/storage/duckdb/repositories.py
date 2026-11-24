@@ -154,6 +154,14 @@ class DuckInstrumentRepository:
         ).fetchall()
         return [_row_to_instrument(r) for r in rows]
 
+    def symbols(self, instrument_ids: Sequence[int]) -> dict[int, str]:
+        """instrument_id -> symbol for the ids that exist."""
+        if not instrument_ids:
+            return {}
+        rows = self._db.cursor().execute("SELECT instrument_id, symbol FROM instruments WHERE instrument_id IN "
+                                         f"({', '.join('?' * len(instrument_ids))})", list(instrument_ids)).fetchall()
+        return dict(rows)
+
     def provider_token(self, instrument_id: int, provider: str) -> Optional[str]:
         row = self._db.cursor().execute(
             "SELECT provider_token FROM instrument_provider_map WHERE instrument_id = ? AND provider = ?",
@@ -1253,3 +1261,79 @@ class DuckAlertRepository:
     def unnotified(self) -> list[dict[str, Any]]:
         """Fired alerts whose message was never tried (the app stopped in between)."""
         return [r for r in self.all() if r["triggered_at"] is not None and r["notified"] is None]
+
+
+class DuckMoverRepository:
+    """Big-movers scores (`mover_scores`) and one row per scored day (`mover_runs`), per model version.
+    What a listed stock did next is joined live from daily candles: the next session = the first daily bar of
+    `session_id` (the Nifty 50) after as_of."""
+
+    def __init__(self, db: Database):
+        self._db = db
+
+    def store(self, model_version: str, as_of, scores: pd.DataFrame, scored_at: datetime, universe: int,
+              with_bar: int) -> None:
+        """Replace that day's scores (instrument_id, probability, atr_pct). A re-scored day keeps its Telegram state."""
+        df = scores[["instrument_id", "probability", "atr_pct"]].assign(model_version=model_version, as_of=as_of)
+        with self._db.transaction() as cur:
+            cur.execute("DELETE FROM mover_scores WHERE model_version = ? AND as_of = ?", [model_version, as_of])
+            cur.register("new_scores", df)
+            cur.execute("INSERT INTO mover_scores SELECT model_version, CAST(as_of AS DATE), instrument_id, "
+                        "probability, atr_pct FROM new_scores")
+            cur.unregister("new_scores")
+            cur.execute("""
+                INSERT INTO mover_runs (model_version, as_of, scored_at, universe, with_bar, stocks)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT (model_version, as_of) DO UPDATE SET scored_at = excluded.scored_at,
+                    universe = excluded.universe, with_bar = excluded.with_bar, stocks = excluded.stocks""",
+                        [model_version, as_of, scored_at, universe, with_bar, len(df)])
+
+    def run(self, model_version: str, as_of) -> Optional[dict[str, Any]]:
+        rows = _records(self._db.cursor(), "SELECT * FROM mover_runs WHERE model_version = ? AND as_of = ?",
+                        [model_version, as_of])
+        return rows[0] if rows else None
+
+    def latest_as_of(self, model_version: str):
+        return self._db.cursor().execute("SELECT max(as_of) FROM mover_runs WHERE model_version = ?",
+                                         [model_version]).fetchone()[0]
+
+    def set_notified(self, model_version: str, as_of, status: str, error: Optional[str] = None) -> None:
+        self._db.cursor().execute("UPDATE mover_runs SET notified = ?, notify_error = ? WHERE model_version = ? "
+                                  "AND as_of = ?", [status, error, model_version, as_of])
+
+    _NEXT = """(SELECT min(CAST(ts AS DATE)) FROM candles WHERE instrument_id = ? AND timeframe = '1d'
+                AND CAST(ts AS DATE) > r.as_of)"""
+
+    def picks(self, model_version: str, as_of, session_id: int) -> list[dict[str, Any]]:
+        """Every stock scored on as_of (highest probability first) with its as_of close and the close before it
+        (`prev_close`), and the next session's date, open and close (null until that bar exists)."""
+        return _records(self._db.cursor(), f"""
+            WITH r AS (SELECT as_of, {self._NEXT} AS next_session FROM mover_runs r
+                       WHERE model_version = ? AND as_of = ?),
+            s AS (SELECT s.instrument_id, s.probability, s.atr_pct, r.as_of, r.next_session
+                  FROM mover_scores s JOIN r USING (as_of) WHERE s.model_version = ?),
+            bars AS (SELECT c.instrument_id, CAST(c.ts AS DATE) AS d, c.open, c.close,
+                            lag(c.close) OVER (PARTITION BY c.instrument_id ORDER BY c.ts) AS prev_close
+                     FROM candles c JOIN s USING (instrument_id)
+                     WHERE c.timeframe = '1d' AND CAST(c.ts AS DATE) BETWEEN s.as_of - 31 AND coalesce(s.next_session, s.as_of))
+            SELECT s.instrument_id, i.symbol, i.name, s.probability, s.atr_pct, b.close, b.prev_close,
+                   s.next_session, n.open AS next_open, n.close AS next_close
+            FROM s JOIN instruments i USING (instrument_id)
+            LEFT JOIN bars b ON b.instrument_id = s.instrument_id AND b.d = s.as_of
+            LEFT JOIN bars n ON n.instrument_id = s.instrument_id AND n.d = s.next_session
+            ORDER BY s.probability DESC, i.symbol""", [session_id, model_version, as_of, model_version])
+
+    def days(self, model_version: str, session_id: int, cutoff: float, big_move: float) -> list[dict[str, Any]]:
+        """Each scored day, newest first: the next session (null until it has a bar), how many stocks the list
+        at `cutoff` held, how many of those have a bar on the next session and how many moved >= big_move."""
+        return _records(self._db.cursor(), f"""
+            WITH r AS (SELECT as_of, {self._NEXT} AS next_session FROM mover_runs r WHERE model_version = ?),
+            l AS (SELECT s.instrument_id, r.as_of, r.next_session FROM mover_scores s JOIN r USING (as_of)
+                  WHERE s.model_version = ? AND s.probability >= ?)
+            SELECT r.as_of, r.next_session, count(l.instrument_id) AS listed, count(c.close) AS with_bar,
+                   count(c.close) FILTER (WHERE abs(c.close / c.open - 1) >= ?) AS hits
+            FROM r LEFT JOIN l USING (as_of)
+            LEFT JOIN candles c ON c.instrument_id = l.instrument_id AND c.timeframe = '1d'
+                 AND CAST(c.ts AS DATE) = l.next_session AND c.open > 0
+            GROUP BY r.as_of, r.next_session ORDER BY r.as_of DESC""",
+                        [session_id, model_version, model_version, cutoff, big_move])

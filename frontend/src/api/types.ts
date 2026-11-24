@@ -404,3 +404,54 @@ export interface SectorRotation {
   hidden: number;
   sectors: SectorRotationRow[];
 }
+
+/** One stock on the big-movers list (GET /movers). move/hit: the next session, null until its bar exists. */
+export interface MoverRow {
+  instrument_id: number;
+  symbol: string;
+  name: string | null;
+  /** Model probability of a big close-vs-open move on the next session (0-1). */
+  probability: number;
+  atr_pct: number | null;
+  /** Close on as_of and its change from the close before. */
+  close: number | null;
+  change: number | null;
+  /** Next session's close / open - 1. */
+  move: number | null;
+  hit: boolean | null;
+}
+
+/** The big-movers list scored after the close of as_of (mirrors MoverService.picks). */
+export interface MoverList {
+  model_version: string;
+  cutoff: number;
+  default_cutoff: number;
+  /** |move| that counts as big (0.04). */
+  big_move: number;
+  as_of: string | null;
+  /** False when no list was scored for as_of (or none at all, with as_of null). */
+  scored: boolean;
+  rows: MoverRow[];
+  universe?: number;
+  with_bar?: number;
+  stocks?: number;
+  /** The session after as_of once it has bars, else null; assumed_next_session = next weekday. */
+  next_session?: string | null;
+  assumed_next_session?: string;
+  top_probability?: number | null;
+  listed?: number;
+  listed_with_bar?: number;
+  hits?: number;
+  /** Every scored stock: how many traded on the next session, and how many of those moved big. */
+  all_with_bar?: number;
+  all_hits?: number;
+}
+
+/** One scored day (GET /movers/days), newest first. */
+export interface MoverDay {
+  as_of: string;
+  next_session: string | null;
+  listed: number;
+  with_bar: number;
+  hits: number;
+}

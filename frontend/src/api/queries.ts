@@ -23,6 +23,8 @@ import type {
   AlertsResponse,
   PriceAlert,
   MarketOverview,
+  MoverDay,
+  MoverList,
   MyWatchlist,
   ParamValue,
   SavedScan,
@@ -59,6 +61,8 @@ export const keys = {
   watchlistQuotes: (id: string) => ['watchlist-quotes', id] as const,
   live: (ids: number[]) => ['live', ids] as const,
   alerts: ['alerts'] as const,
+  movers: (asOf: string | undefined, cutoff: number | undefined) => ['movers', asOf, cutoff] as const,
+  moverDays: (cutoff: number | undefined) => ['mover-days', cutoff] as const,
 };
 
 /**
@@ -379,6 +383,24 @@ export function useSectorRotation(universe: string, rankBy: RankBy, period: numb
         min_stocks: minStocks,
       }),
     enabled: enabled && ago !== undefined,
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** The big-movers list after the close of `asOf` (default: the latest) at `cutoff` (default: the backend setting). */
+export function useMovers(asOf: string | undefined, cutoff: number | undefined) {
+  return useQuery({
+    queryKey: keys.movers(asOf, cutoff),
+    queryFn: () => http.get<MoverList>('/movers', { as_of: asOf, cutoff }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Every scored big-movers day with its list size and hits at `cutoff`. */
+export function useMoverDays(cutoff: number | undefined) {
+  return useQuery({
+    queryKey: keys.moverDays(cutoff),
+    queryFn: () => http.get<MoverDay[]>('/movers/days', { cutoff }),
     placeholderData: keepPreviousData,
   });
 }

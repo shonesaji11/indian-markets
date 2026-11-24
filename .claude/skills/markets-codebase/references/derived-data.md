@@ -45,6 +45,21 @@ Commands run from `backend/` (`.venv\Scripts\markets.exe ...`). When `markets se
 - **Self-healing:** re-downloaded bars get a new `ingested_at`, so the next run re-checks them and resolves fixed issues.
 - **Rebuild:** check logic changed → bump `DQ_VERSION` (forces a full run next time) or run `markets dq check --full`. Bars deleted or edited without a new `ingested_at` → `markets dq check --full`.
 
+### 5. `mover_scores` + `mover_runs` (big-movers list per day)
+- **Writer:** `MoverService.score` via `DuckMoverRepository.store` (`pipelines/movers.py`; replaces that day's scores, keeps its Telegram state): the nightly update's last step (`MoverService.nightly`, then one Telegram message per day), `markets movers [--since D] [--rebuild]` / `POST /api/jobs/movers?since&rebuild` (no message).
+- **Scope:** one row per eligible `-EQ` stock and scored session (`as_of`), per `model_version`. Only sessions after the model's training period (2025 on for `co4_eod_v1`).
+- **Inputs:** `candles` (1d, last `HISTORY_BARS` = 500 bars up to as_of) of the current `niftytotalmarket` members (all series: they feed the market features), the Nifty 50 (sessions, market features) and India VIX; `instruments.symbol` (the `-EQ` filter); the feature code (`engine/movers.py`, `FEATURES_VERSION`) and the model file (`src/markets/models/<model_version>.json`). The next session is assumed to be the next weekday (no holiday calendar).
+- **The model file** (`src/markets/models/`, trained on 2018-2024 bars by `scripts/train_movers.py`) is frozen on purpose: bar fixes never retrain it; a retrained model is a new `model_version`.
+- **Not stored:** what each stock did next (close vs open, hit) is read live from `candles`, so it follows bar fixes by itself.
+- **Guards:** a day already scored is skipped (not re-scored) unless `--rebuild`. The model refuses to load if its `features_version` or feature list differs from the code. A different model writes under its own `model_version`. Universe membership is today's at scoring time; a later rebalance doesn't change stored days.
+- **Not caught:** bars re-downloaded, repaired or removed on or before a scored day (the scores used the old bars); a change to the feature code without a new model version (prevented by the version check only if `FEATURES_VERSION` is bumped).
+- **Rebuild:** `markets movers --since D --rebuild` (every session from D; the API when the server holds the DB). One day: `markets movers --rebuild` re-scores the latest session only.
+- **What needs which rebuild:**
+  - Bars re-downloaded or revised on day D, or removed by the repair step, for a universe stock, the Nifty or VIX: re-score every list scored from D on: `--since D --rebuild` (each day looks back 500 bars, and the market features use the whole universe). Small fixes to one stock change other stocks' scores only through the market features.
+  - A split/bonus fix (re-downloaded history): `--since <first scored day> --rebuild`.
+  - A logic change in `engine/movers.py`: bump `FEATURES_VERSION`, train a new model version (`scripts/train_movers.py`), switch `MODEL_VERSION`, then `markets movers --since 2025-01-01` for that version (old versions' rows stay; delete them with `DELETE FROM mover_scores WHERE model_version = ?` and the same on `mover_runs` if unwanted).
+  - Universe rebalance: nothing (stored days keep the members they were scored with).
+
 ## Computed live (nothing stored, no rebuild)
 - `v_daily_stats_v1`, `daily_signals_v1(as_of)` (SQL), Overview (`MarketOverviewService`), scans and custom scans (`ScreenerService`, `engine/scans.py`), scan basket and watchlist performance, sector pages, breadth for non-stored MA periods or universes, sector near-high counts (52-week high is computed live; the all-time high is read from `daily_ath`).
 - Changing their logic still follows the versioning rule (add `_v2`, bump `@scan` version); results change on the next request.

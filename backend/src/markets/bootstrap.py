@@ -22,6 +22,7 @@ from markets.pipelines.highs import AthService
 from markets.pipelines.ingest import IngestionService
 from markets.pipelines.live import LiveService
 from markets.pipelines.market_overview import MarketOverviewService
+from markets.pipelines.movers import MoverService
 from markets.pipelines.repair import RepairService
 from markets.pipelines.screener import ScreenerService
 from markets.pipelines.watchlists import WatchlistService
@@ -38,6 +39,7 @@ from markets.storage.duckdb import (
     DuckIngestionLog,
     DuckInstrumentRepository,
     DuckMarketRepository,
+    DuckMoverRepository,
     DuckSavedScanRepository,
     DuckViewRepository,
     DuckWatchlistRepository,
@@ -71,6 +73,7 @@ class Container:
     repair: RepairService
     live: LiveService  # streams only once started (the API server does; CLI commands don't)
     alerts: AlertService  # fires only once started, like `live`
+    movers: MoverService
 
     def close(self) -> None:
         self.alerts.stop()
@@ -114,8 +117,10 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
         return [*watchlists.member_ids("benchmarks"), *(i for wl in watchlists.manual_lists() for i in wl["member_ids"]),
                 *alerts.instrument_ids()]
 
+    notifier = notifier or build_notifier(settings)
+    movers = MoverService(DuckMoverRepository(db), market, watchlists, instruments, notifier, settings.movers_cutoff)
     live = LiveService(live_feed or build_live_feed(provider), instruments, provider.name, always_streamed)
-    alerts = AlertService(DuckAlertRepository(db), instruments, live, notifier or build_notifier(settings))
+    alerts = AlertService(DuckAlertRepository(db), instruments, live, notifier)
 
     return Container(
         settings=settings,
@@ -133,7 +138,7 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
         calc_service=CalcService(registry, candles, calcs),
         watchlist_sync=watchlist_sync,
         daily_update=DailyUpdateService(ingestion, watchlist_sync, watchlists, market, breadth,
-                                        data_quality=data_quality, ath=ath, repair=repair),
+                                        data_quality=data_quality, ath=ath, repair=repair, movers=movers),
         overview=MarketOverviewService(market, watchlists, benchmarks),
         breadth=breadth,
         ath=ath,
@@ -141,6 +146,7 @@ def build_container(settings: Optional[Settings] = None, provider: Optional[Mark
         repair=repair,
         live=live,
         alerts=alerts,
+        movers=movers,
         screener=ScreenerService(registry, market, watchlists, DuckSavedScanRepository(db), instruments,
                                  *benchmarks[:1]),
     )

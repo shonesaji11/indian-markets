@@ -76,6 +76,11 @@ def main(argv: Optional[list[str]] = None) -> None:
     p.add_argument("--rebuild", action="store_true", help="recompute every stock's full history")
     p.add_argument("--api", default="http://127.0.0.1:8000", help="API server to use when it holds the database")
 
+    p = sub.add_parser("movers", help="score the big-movers list for the latest session (or every session since a date)")
+    p.add_argument("--since", help="YYYY-MM-DD: score every session from this day (after the model's training period)")
+    p.add_argument("--rebuild", action="store_true", help="re-score days already scored")
+    p.add_argument("--api", default="http://127.0.0.1:8000", help="API server to use when it holds the database")
+
     p = sub.add_parser("watchlists", help="sync watchlists from universes.py and list them")
     p.add_argument("--no-sync", action="store_true")
 
@@ -134,6 +139,11 @@ def main(argv: Optional[list[str]] = None) -> None:
             print(f"database is in use by the API server; running through {args.api}")
             _print_repair(_post_api(args.api, "/api/jobs/repair", {}))
             return
+        if args.command == "movers" and busy:
+            print(f"database is in use by the API server; running through {args.api}")
+            params = {"rebuild": args.rebuild, **({"since": args.since} if args.since else {})}
+            _print_movers(_post_api(args.api, "/api/jobs/movers", params))
+            return
         if args.command == "highs" and busy:
             print(f"database is in use by the API server; running through {args.api}")
             print(f"all-time highs: {_post_api(args.api, '/api/jobs/highs', {'rebuild': args.rebuild})['rows']} rows")
@@ -170,6 +180,12 @@ def main(argv: Optional[list[str]] = None) -> None:
             _print_repair(c.daily_update.repair_now())
         elif args.command == "highs":
             print(f"all-time highs: {c.ath.refresh(full=args.rebuild)} rows")
+        elif args.command == "movers":
+            try:
+                since = _parse_date(args.since)
+                _print_movers(c.movers.backfill(since.date(), args.rebuild) if since else c.movers.score(rebuild=args.rebuild))
+            except ValueError as exc:
+                raise SystemExit(f"big movers: {exc}")
         elif args.command == "watchlists":
             if not args.no_sync:
                 for r in c.watchlist_sync.sync_all():
@@ -298,6 +314,12 @@ def summary_block(r: dict, scheduled: bool) -> str:
     else:
         lines.append("  quality:  not run")
 
+    mv = r.get("movers")
+    if mv:
+        lines.append(f"  movers:   {mv['as_of']} already scored" if mv["skipped"] else
+                     f"  movers:   {mv['listed']} listed of {mv['stocks']} scored after {mv['as_of']}"
+                     + (f", Telegram {mv['notified']}" if mv.get("notified") else ""))
+
     failed = r.get("failed_symbols", [])
     if failed:
         lines.append("  failed:   " + ", ".join(failed[:5]) + (f" +{len(failed) - 5} more" if len(failed) > 5 else ""))
@@ -332,6 +354,18 @@ def _print_repair(report: dict) -> None:
           f"{r['resolved']} resolved, {r['accepted']} accepted as provider holes, {r['rate_limited']} rate-limited")
     for e in r["errors"][:20]:
         print(f"  error: {e}")
+
+
+def _print_movers(r: dict) -> None:
+    """A MoverService.score() or .backfill() summary (directly or as JSON)."""
+    if "sessions" in r:
+        print(f"big movers ({r['model_version']}): {r['scored']} of {r['sessions']} sessions scored")
+    elif r["skipped"]:
+        print(f"big movers ({r['model_version']}): {r['as_of']} already scored (--rebuild to redo)")
+    else:
+        print(f"big movers ({r['model_version']}) after {r['as_of']}: {r['stocks']} stocks scored, {r['listed']} listed")
+        for w in r["warnings"]:
+            print(f"  warning: {w}")
 
 
 def _post_api(base_url: str, path: str, params: dict) -> dict:

@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
+    # Big-movers watchlist (pipelines/movers.py): stocks with a model probability at or above this are listed
+    # (Telegram and the page's default). research/movers/ml_co_4.md: 0.20 ~ 16 stocks a day, 0.30 ~ 3-4.
+    movers_cutoff: float = 0.20
+
     cors_origins: list[str] = ["http://localhost:5173"]
 
 

@@ -44,6 +44,7 @@ def container(constituents):
     c = build_container(settings=settings, provider=FakeProvider(), db=Database(":memory:"),
                         constituents=constituents, watchlist_specs=TEST_WATCHLISTS)
     c.ingestion.sync_instruments()
+    c.daily_update.movers = None  # needs the niftytotalmarket universe: test_movers.py builds its own service
     yield c
     c.close()
 

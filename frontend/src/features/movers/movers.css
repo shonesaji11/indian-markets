@@ -1,0 +1,30 @@
+.mover-days {
+  min-width: 250px;
+}
+.mover-days .ui-popover__item,
+.mover-days__total {
+  justify-content: space-between;
+}
+.mover-days__total,
+.mover-days__older {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mover-days__older {
+  justify-content: space-between;
+}
+.movers-page__bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.movers-page__hit {
+  color: var(--accent);
+  font-weight: 600;
+}
+.movers-page__summary {
+  margin-bottom: var(--space-2);
+}

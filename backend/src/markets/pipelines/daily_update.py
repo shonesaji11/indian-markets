@@ -12,6 +12,7 @@ from markets.pipelines.breadth import BreadthService
 from markets.pipelines.data_quality import DataQualityService
 from markets.pipelines.highs import AthService
 from markets.pipelines.ingest import IngestionService
+from markets.pipelines.movers import MoverService
 from markets.pipelines.repair import RepairService
 from markets.pipelines.watchlists import WatchlistService
 from markets.storage.duckdb.repositories import DuckMarketRepository, DuckWatchlistRepository
@@ -37,6 +38,7 @@ class DailyUpdateReport:
     repair: Optional[dict[str, Any]] = None  # RepairService.run() summary
     ath_rows: int = 0  # daily_ath rows rewritten (all-time-high cache)
     data_quality: Optional[dict[str, Any]] = None  # DataQualityService.run() summary
+    movers: Optional[dict[str, Any]] = None  # MoverService.nightly() summary (big-movers list + Telegram)
     errors: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,13 +58,14 @@ class DailyUpdateService:
                  watchlists: DuckWatchlistRepository, market: DuckMarketRepository,
                  breadth: Optional[BreadthService] = None, retry_delay: float = 60.0,
                  data_quality: Optional[DataQualityService] = None, ath: Optional[AthService] = None,
-                 repair: Optional[RepairService] = None):
+                 repair: Optional[RepairService] = None, movers: Optional[MoverService] = None):
         self.ingestion = ingestion
         self.retry_delay = retry_delay
         self.breadth = breadth
         self.ath = ath
         self.repair = repair
         self.data_quality = data_quality
+        self.movers = movers
         self.watchlist_sync = watchlist_sync
         self.watchlists = watchlists
         self.market = market
@@ -136,8 +139,8 @@ class DailyUpdateService:
         return report
 
     def _after_download(self, report: DailyUpdateReport) -> None:
-        """Repair, then bring derived data up to date, then check data quality; a failing step is
-        recorded in `report.errors` and the next one still runs."""
+        """Repair, then bring derived data up to date, check data quality, then score the big movers; a failing
+        step is recorded in `report.errors` and the next one still runs."""
         # Fix what the data-quality checks found earlier (re-download, or remove bars still bad), before
         # anything derived is brought up to date.
         removed_since = None
@@ -171,6 +174,15 @@ class DailyUpdateService:
             except Exception as exc:
                 report.errors.append(f"data quality: {exc}")
                 log.exception("data-quality checks failed")
+
+        # Tomorrow's big-movers list from tonight's bars, sent to Telegram once.
+        if self.movers is not None:
+            try:
+                report.movers = self.movers.nightly()
+                report.errors.extend(f"big movers: {w}" for w in report.movers.get("warnings", []))
+            except Exception as exc:
+                report.errors.append(f"big movers: {exc}")
+                log.exception("big-movers scoring failed")
 
     def _ingest(self, instrument_id: int, report: DailyUpdateReport, failures: dict, new: bool) -> None:
         result = self.ingestion.ingest(instrument_id, Interval.D1)
